@@ -4,13 +4,13 @@
 #include<netinet/in.h> // INET_ADDRSTRLEN, htonl, htons
 #include<arpa/inet.h>  // inet_pton, inet_ntop
 #include<signal.h>
-#include<unistd.h>   // close
+#include<unistd.h>   // close, pipe, dup
 #include<stdlib.h>
 #include<assert.h>
 #include<stdio.h>
 #include<string.h> // basename
 #include<iostream>
-#include<netdb.h>  // gethostbyname,getserverbyname,
+#include<netdb.h>  // gethostbyname,getserverbyname, getaddrinfo
 #define BUFFER_SIZE 1024
 /*
 struct sockaddr{
@@ -247,3 +247,29 @@ int main(int argc, char* argv[]){   // 在终端执行命令时，argc代表参�
     close(sock);
     return 0;
 }*/
+int main(int argc, char*argv[]){
+    using namespace std;
+    assert(argc == 2);
+    char* host = argv[1];
+    //获取目标主机信息
+    struct hostent* hostinfo = gethostbyname(host);
+    assert(hostinfo);
+    //获取daytime服务信息
+    struct servent* servinfo = getservbyname("daytime", "tcp");
+    assert(servinfo);
+    cout << "daytime port is" << ntohs(servinfo->s_port) << endl;
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_port = servinfo->s_port;
+    address.sin_addr = *(struct in_addr*)*hostinfo->h_addr_list;
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int result = connect(sockfd, (struct sockaddr*)&address, sizeof(address));
+    assert(result != -1);
+    char buffer[128];
+    result = read(sockfd, buffer, sizeof(buffer));
+    assert(result > 0);
+    buffer[result] = '\0';
+    cout << "the day time is" << buffer;
+    close(sockfd);
+    return 0;
+}
