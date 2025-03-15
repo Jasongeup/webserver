@@ -107,6 +107,7 @@ void lt(epoll_event* events, int number, int epollfd, int listenfd){
             socklen_t client_addrlength = sizeof(client_address);
             int connfd = accept(listenfd, (struct sockaddr*)&client_address, &client_addrlength);
             addfd(epollfd, connfd, false);   // 对connfd禁用et模式
+            cout << "test1" << endl;
         }
         else if(events[i].events & EPOLLIN){
             // 只要socket读缓存中还有未读出的数据，这段代码就被触发
