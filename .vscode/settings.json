@@ -2,5 +2,6 @@
     "files.associations": {
         "iostream": "cpp"
     },
-    "editor.fontSize": 18
+    "editor.fontSize": 18,
+    "C_Cpp.errorSquiggles": "enabled"
 }
