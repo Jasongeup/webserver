@@ -192,3 +192,40 @@ int main(int argc, char* argv[]) {
     delete[] users;
     return 0;
 }
+
+/*
+#define TIMEOUT 5000
+
+int timeout = TIMEOUT;
+time_t start = time(NULL);
+time_t end = time(NULL);
+
+while (1) {
+    printf("The timeout is now %d milliseconds\n", timeout);
+    start = time(NULL);
+
+    int number = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, timeout);
+    if ((number < 0) && (errno != EINTR)) {
+        printf("Epoll failure\n");
+        break;
+    }
+
+    // 如果 epoll_wait 成功返回 0，说明超时时间到，此时处理定时任务，并重置定时时间
+    if (number == 0) {
+        timeout = TIMEOUT;
+        continue;
+    }
+
+    end = time(NULL);
+    
+    // 计算本次 epoll_wait 调用的持续时间 (end - start) * 1000 ms
+    // 并更新 timeout 以作为下一次 epoll_wait 的超时参数
+    timeout -= (end - start) * 1000;
+
+    // 重新计算后的 timeout 可能小于等于 0，说明超时已经到达，需要重置定时时间
+    if (timeout <= 0) {
+        timeout = TIMEOUT;
+    }
+
+    // 处理连接事件
+}*/
