@@ -16,6 +16,15 @@ void* another(void* arg)
     return NULL;  // 保持函数逻辑完整性，不影响原行为
 }
 
+void prepare()
+{
+    pthread_mutex_lock(&mutex);
+}
+void infork()
+{
+    pthread_mutex_unlock(&mutex);
+}
+
 int main()
 {
     pthread_mutex_init(&mutex, NULL);
@@ -25,6 +34,7 @@ int main()
     /* 父进程中的主线程暂停 1 s，以确保在执行 fork 操作之前，子线程已经开始运行并获得了互斥变量 mutex */
     sleep(1);
 
+    pthread_atfork(prepare,infork,infork);
     int pid = fork();
     if (pid < 0) {
         pthread_join(id, NULL);
