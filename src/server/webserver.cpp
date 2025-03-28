@@ -122,7 +122,7 @@ void WebServer::SendError_(int fd, const char* info) {
 void WebServer::CloseConn_(HttpConn* client) {  
     assert(client);
     LOG_INFO("Client[%d] quit!", client->GetFd());
-    epoller->DelFd(client->GetFD());
+    epoller->DelFd(client->GetFd());
     client->Close();
 }
 
@@ -136,4 +136,154 @@ void WebServer::AddClient_(int fd, sockaddr_in addr) {
     epoller_->AddFd(fd, EPOLLIN | connEvent_);   // 往epoll表中注册socket就绪事件
     SetFdNonblock(fd);
     LOG_INFO("Client[%d] in!", users_->GetFd());
+}
+
+/* 接受客户连接请求 */
+void WebServer::DealListen_() {
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+    do {
+        int fd = accept(listenFd_, (struct sockaddr*)& addr, &len);
+        if (fd < 0) return;  // 当所有客户连接请求都被处理，此时会返回，也退出了while循环
+        else if (HttpConn::userCount >= MAX_FD) {
+            SendError_(fd, "Server busy!");
+            LOG_WARN("Client is full!");
+            return;
+        }
+        AddClient_(fd, addr);
+    } while (listenEvent_ & EPOLLET);  // 如果监听socket设置了ET模式，一次性接受所有客户连接请求
+}
+
+/* 当有客户数据来时把读数据任务交给线程池 */
+void WebServer::DealRead_(HttpConn* client) {
+    assert(client);
+    ExtentTime_(client);
+    threadpool_->AddTask(std::bind(&WebServer::OnRead_, this, client));
+}
+
+/* 把写数据的任务交给线程池 */
+void WebServer::DealWrite_(HttpConn* client) {
+    assert(client);
+    ExtentTime_(client);
+    threadpool_->AddTask(std::bind(&WebServer::OnWrite_, this, client));
+}
+
+/* 扩充定时时间？当有新任务发生时就重置定时时间 */
+void WebServer::ExtentTime_(HttpConn* client) {
+    assert(client);
+    if(timeoutMS_ > 0) { timer_->adjust(client->GetFd(), timeoutMS_); }
+}
+
+/* 读socket连接上的数据？ */
+void WebServer::OnRead_(HttpConn* client) {
+    assert(client);
+    int ret = -1;
+    int readErrno = 0;
+    ret = client->read(&readErrno);
+    if (ret <= 0 && readErrno != EAGAIN) { // 如果不是因为阻塞导致读失败，则关闭连接
+        CloseConn_(client);
+        return;
+    }
+    OnProcess(client);
+}
+
+/* 根据逻辑单元处理的结果重置socket的读就绪、写就绪监听事件？*/
+void WebServer::OnProcess_(HttpConn* client) {
+    if(client->process()) {
+        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT);
+    } else {
+        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLIN);
+    }
+}
+
+/* 往连接soceket上写数据*/
+void WebServer::OnWrite_(HttpConn* client) {
+    assert(client);
+    int ret = -1;
+    int Errno = 0;
+    ret = client->write(&writeErrno);
+    if (client->ToWriteBytes() == 0) {
+        // 传输完成
+        if (client->IsKeepAlive()) {
+            OnProcess(client);
+            return;
+        }
+    }
+    else if (ret < 0) {
+        if (writeErrno == EAGAIN) {  // 可能是TCP写缓冲已满
+            // 继续传输
+            epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT);
+            return;
+        }
+    }
+    CloseConn_(client);
+}
+
+/* 创建监听socket*/
+bool WebServer::InitSocket_() {
+    int ret;
+    struct sockaddr_in addr;
+    if (port_ > 65535 || port_ < 1024) {  // port_是本地服务器的监听端口
+        LOG_ERROR("Port:%d Error", port_);
+        return false;
+    }
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port_);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    struct linger optLinger = {0};
+    if (openLinger_) {
+        /* 优雅关闭，直到所剩数据发送完毕或超时 */
+        optLinger.l_onoff = 1;
+        optLinger.l_linger = 1;
+    }
+    listenFd_ = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenFd_ < 0) {
+        LOG_ERROR("Create socket error!", port_);
+        return false;
+    }
+
+    ret = setsockopt(listenFd_, SOL_SOCKET, SO_LINGER, &optLinger, sizeof(optLinger));
+    if (ret < 0) {
+        close(listenFd_);
+        LOG_ERROR("Init linger error!", port_);
+        return false;
+    }
+
+    int optval = 1;
+    /* 端口复用 */
+    /* 只有最后一个套接字会正常接收数据 */
+    ret = setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, (const void*)&optval, sizeof(int));
+    if (ret == -1) {
+        LOG_ERROR("set socket setsocketopt error");
+        close(listenFd_);
+        return false;
+    }
+
+    ret = bind(listenFd_, (struct sockaddr*)&addr, sizeof(addr));
+    if (ret < 0) {
+        LOG_ERROR("Bind Port:%d error!", port_);
+        close(listenFd_);
+        return false;
+    }
+
+    ret = listen(listenFd_, 6);
+    if (ret < 0) {
+        LOG_ERROR("Listen port:%d error!", port_);
+        close(listenFd_);
+        return false;
+    }
+    ret = epoller->AddFd(listenFd_, listenEvent_ | EPOLLIN);
+    if (ret == 0) {
+        LOG_ERROR("Add listen error!");
+        close(listenFd_);
+        return false;
+    }
+    SetFdNonblock(listenFd_);
+    LOG_INFO("Server port:%d", port_);
+    return true;
+}
+
+int WebServer::SetFdNonblock(int fd) {
+    assert(fd > 0);
+    return fcntl(fd, F_SETFL, fcntl(fd, F_GETFD, 0) | O_NONBLOCK);
 }

@@ -32,7 +32,7 @@
 class WebServer {
 public:
     /* WebServer的初始化参数，包括：
-        端口，触发模式(ET/LT)，timeoutMs, 优雅关闭连接，
+        端口，触发模式(ET/LT)，定时时间timeoutMs, 优雅关闭连接，
         数据库端口，数据库用户名，数据库密码，
         数据库名称，连接池的数量，线程池数量
         日志开关，日志等级，日志异步队列容量
@@ -68,7 +68,7 @@ private:
 
     int port_;      // 服务器端口
     bool openLinger_;
-    int timeoutMs_;  // 毫秒
+    int timeoutMS_;  // 毫秒
     bool isClose_;   // 服务器开关
     int listenFd_;   // 监听socket
     char* srcDir_;   // 服务器根目录
