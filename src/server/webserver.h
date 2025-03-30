@@ -4,6 +4,9 @@
  *               which organize all parts of the server.
  * 
  * Features    : 
+ *    - accept socket and manage corresponding task deal unit
+ *    - write log file  
+ *    - manage connection timeout
  * 
  * Author      : JasonGe
  * Created on  : 2025/03/26
