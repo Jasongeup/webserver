@@ -22,7 +22,7 @@
 #include <sys/mman.h>    // mmap, munmap
 
 #include "../buffer/buffer.h"
-#include "../log/log.h"
+#include "../logsys/log.h"
 
 class HttpResponse {
 public:

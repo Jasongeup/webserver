@@ -25,12 +25,12 @@
 #include <arpa/inet.h>
 
 #include "epoller.h"
-#include "../log/log.h"
-#include "../timer/heaptimer.h"
+#include "../logsys/log.h"
+#include "../timer/heapTimer.h"
 #include "../pool/sqlconnpool.h"
 #include "../pool/threadpool.h"
 #include "../pool/sqlconnRAII.h"
-#include "../http/httpconn.h"
+#include "../httpConnection/httpconn.h"
 
 class WebServer {
 public:

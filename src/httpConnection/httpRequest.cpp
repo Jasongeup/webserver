@@ -123,7 +123,7 @@ int HttpRequest::ConverHex(char ch) {
     return ch;
 }
 
-/* 分析post请求 ?*/
+/* 分析post请求 */
 void HttpRequest::ParsePost_() {
     // 如果是提交了html表单（以键值对的形式）
     if(method_ == "POST" && header_["Content-Type"] == "application/x-www-form-urlencoded") {
@@ -248,6 +248,7 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
     return flag;
 }
 
+/* 返回用户请求的文件路径 */
 std::string HttpRequest::path() const{
     return path_;
 }

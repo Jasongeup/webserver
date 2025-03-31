@@ -21,7 +21,7 @@
  #include <stdlib.h>      // atoi()
  #include <errno.h>      
  
- #include "../log/log.h"
+ #include "../logsys/log.h"
  #include "../pool/sqlconnRAII.h"
  #include "../buffer/buffer.h"
  #include "httpRequest.h"
