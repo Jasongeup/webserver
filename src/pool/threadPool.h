@@ -56,7 +56,8 @@
              pool_->cond.notify_all(); // 当线程收到信号量被唤醒后，监测到isClosed=true，就会关闭自己
          }
      }
- 
+     
+     /* 往线程池的任务请求队列中插入任务 */
      template<class F>
      void AddTask(F&& task) {
          {

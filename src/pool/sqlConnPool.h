@@ -11,7 +11,7 @@
  *   - use mutex to control the visit of connQueue
  * 
  * Author      : JasonGe
- * Created on  : 2025/03/28
+ * Created on  : 2025/03/29
  * 
 ***********************************************************/
 #ifndef SQLCONNPOOL_H

@@ -20,18 +20,18 @@ WebServer::WebServer(int port, int trigMode, int timeoutMs, bool OptLinger,
     srcDir_ = new char[256];
     assert(getcwd(srcDir_, 256));  // 获取当前工作目录的绝对路径
     strncat(srcDir_, "/resources/", 16);    // 附加到根目录末尾
-    HttpConn::userCount = 0;        // 静态变量初始化？
+    HttpConn::userCount = 0;        // 静态成员变量初始化
     HttpConn::srcDir = srcDir_;
-    SqlConnPool::Instance()->Init("localhost", sqlPort, sqlUser, sqlPwd, dbName, connPoolNum);
+    SqlConnPool::Instance()->Init("localhost", sqlPort, sqlUser, sqlPwd, dbName, connPoolNum); // 初始化数据库连接池
 
     InitEventMode_(trigMode);
     if (!InitSocket_()) {isClose_ = true;}
 
     if (openLog) {   // 记录参数的日志信息
-        Log::Instance()->init(logLevel, "./log", ".log", logQueSize);
+        Log::Instance()->init(logLevel, "./log", ".log", logQueSize);  // 创建日志实例，并初始化
         if (isClose_) {LOG_ERROR("==========Server init error!==========");}
         else {
-            LOG_INFO("==========Server init==========");
+            LOG_INFO("==========Server init==========");  // 记录服务器初始化参数
             LOG_INFO("Port:%d, OpenLinger:%s", port_, OptLinger?"true":"false");
             LOG_INFO("Listen Mode:%s, OpenConn Mode:%s",
                     (listenEvent_ & EPOLLET ? "ET" : "LT"),
@@ -122,7 +122,7 @@ void WebServer::SendError_(int fd, const char* info) {
 void WebServer::CloseConn_(HttpConn* client) {  
     assert(client);
     LOG_INFO("Client[%d] quit!", client->GetFd());
-    epoller->DelFd(client->GetFd());
+    epoller_->DelFd(client->GetFd());
     client->Close();
 }
 
@@ -174,25 +174,25 @@ void WebServer::ExtentTime_(HttpConn* client) {
     if(timeoutMS_ > 0) { timer_->adjust(client->GetFd(), timeoutMS_); }
 }
 
-/* 读socket连接上的数据？ */
+/* 读socket连接上的数据，被插入到线程池的任务请求队列 */
 void WebServer::OnRead_(HttpConn* client) {
     assert(client);
     int ret = -1;
     int readErrno = 0;
-    ret = client->read(&readErrno);
+    ret = client->read(&readErrno);  // 将连接socket上的数据读入缓冲区
     if (ret <= 0 && readErrno != EAGAIN) { // 如果不是因为阻塞导致读失败，则关闭连接
         CloseConn_(client);
         return;
     }
-    OnProcess(client);
+    OnProcess(client); 
 }
 
-/* 根据逻辑单元处理的结果重置socket的读就绪、写就绪监听事件？*/
+/* 读缓冲区中数据的处理程序，根据处理结果决定是否监听socket写就绪事件 */
 void WebServer::OnProcess_(HttpConn* client) {
-    if(client->process()) {
-        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT);
+    if(client->process()) {  // 从读缓冲区分析请求，并写应答报文
+        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT); // 返回数据准备好了，则监听socket写就绪事件
     } else {
-        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLIN);
+        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLIN);  // 分析失败，继续监听socket读就绪事件
     }
 }
 
@@ -272,7 +272,7 @@ bool WebServer::InitSocket_() {
         close(listenFd_);
         return false;
     }
-    ret = epoller->AddFd(listenFd_, listenEvent_ | EPOLLIN);
+    ret = epoller_->AddFd(listenFd_, listenEvent_ | EPOLLIN);
     if (ret == 0) {
         LOG_ERROR("Add listen error!");
         close(listenFd_);

@@ -102,6 +102,7 @@ ssize_t HttpConn::write(int* saveErrno) {
     return len;
 }
 
+/* 分析请求，并写应答报文到写缓冲区，返回是否发送给客户的所有数据准备就绪 */
 bool HttpConn::process() {
     request_.Init();
     if(readBuff_.ReadableBytes() <= 0) { 

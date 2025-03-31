@@ -17,7 +17,8 @@
      freeCount_ = 0;
  }
  
- SqlConnPool* SqlConnPool::Instance() {
+ /* 单例懒汉模式 */
+ SqlConnPool* SqlConnPool::Instance() {  
      static SqlConnPool connPool;
      return &connPool;
  }

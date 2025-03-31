@@ -76,8 +76,8 @@ private:
     int listenFd_;   // 监听socket
     char* srcDir_;   // 服务器根目录
 
-    uint32_t listenEvent_;   // 监听socket的epoll事件
-    uint32_t connEvent_;     // 连接socket的epoll事件
+    uint32_t listenEvent_;   // 监听socket的epoll事件，是否设置ET模式
+    uint32_t connEvent_;     // 连接socket的epoll事件,是否设置ET模式
 
     std::unique_ptr<HeapTimer> timer_;    // 定时器
     std::unique_ptr<ThreadPool> threadpool_;   // 线程池
