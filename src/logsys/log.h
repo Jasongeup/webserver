@@ -1,15 +1,15 @@
 /***********************************************************
- * FileName    : webserver.h
- * Description : This header file define a class named WebServer, 
- *               which organize all parts of the server.
+ * FileName    : log.h
+ * Description : This header file define a class named Log, 
+ *               which used for log-system.
  * 
  * Features    : 
- *    - accept socket and manage corresponding task deal unit
- *    - write log file  
- *    - manage connection timeout
+ *    - create log-file by days
+ *    - one instance publicly
+ *    - support sync/async way of log-writting
  * 
  * Author      : JasonGe
- * Created on  : 2025/03/26
+ * Created on  : 2025/03/30
  * 
 ***********************************************************/
 #ifndef LOG_H

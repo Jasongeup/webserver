@@ -10,15 +10,15 @@
 
 #include "webserver.h"
 
-WebServer::WebServer(int port, int trigMode, int timeoutMs, bool OptLinger,
+WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               int sqlPort, const char* sqlUser, const char* sqlPwd,
               const char* dbName, int connPoolNum, int threadNum,
               bool openLog, int logLevel, int logQueSize):
-              port_(port), openLinger_(OptLinger), timeoutMS_(timeoutMs), isClose_(false),
+              port_(port), openLinger_(OptLinger), timeoutMS_(timeoutMS), isClose_(false),
               timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller())
 {
-    srcDir_ = new char[256];
-    assert(getcwd(srcDir_, 256));  // 获取当前工作目录的绝对路径
+    srcDir_ = getcwd(nullptr, 256);
+    assert(srcDir_);  // 获取当前工作目录的绝对路径
     strncat(srcDir_, "/resources/", 16);    // 附加到根目录末尾
     HttpConn::userCount = 0;        // 静态成员变量初始化
     HttpConn::srcDir = srcDir_;
@@ -46,7 +46,7 @@ WebServer::WebServer(int port, int trigMode, int timeoutMs, bool OptLinger,
 WebServer::~WebServer() {
     close(listenFd_);
     isClose_ = true;
-    delete[] srcDir_;
+    free(srcDir_);
     SqlConnPool::Instance()->ClosePool();
 }
 
@@ -76,13 +76,13 @@ void WebServer::InitEventMode_(int trigMode) {
 }
 
 void WebServer::Start() {
-    int timeMs = -1;  /* epoll wait timeout == -1 无事件将阻塞 */
+    int timeMS = -1;  /* epoll wait timeout == -1 无事件将阻塞 */
     if (!isClose_) {LOG_INFO("========== Server start ==========");}
-    while (!isClose) {
-        if (timeoutMS > 0) {
-            timeMs = timer_->GetNextTick();
+    while (!isClose_) {
+        if (timeoutMS_ > 0) {
+            timeMS = timer_->GetNextTick(); // 每次都要检查是否超时
         }
-        int eventCnt = epoller_->Wait(timeMs);  // 等待就绪事件epoll_wait
+        int eventCnt = epoller_->Wait(timeMS);  // 等待就绪事件epoll_wait
         for (int i = 0; i < eventCnt; i++) {
             /*处理事件*/
             int fd = epoller_->GetEventFd(i);   // 获取就绪的连接
@@ -98,9 +98,9 @@ void WebServer::Start() {
                 assert(users_.count(fd) > 0);
                 DealRead_(&users_[fd]);
             }
-            else if (events & EPOLLUOT) {  // 如果是写就绪事件，断言对应任务存在，并执行写socket操作
+            else if (events & EPOLLOUT) {  // 如果是写就绪事件，断言对应任务存在，并执行写socket操作
                 assert(users_.count(fd) > 0);
-                DealWrite_(users_[fd]);
+                DealWrite_(&users_[fd]);
             } else {
                 LOG_ERROR("Unexpected event");
             }
@@ -130,12 +130,12 @@ void WebServer::CloseConn_(HttpConn* client) {
 void WebServer::AddClient_(int fd, sockaddr_in addr) {
     assert(fd > 0);
     users_[fd].init(fd, addr);  // 给新连接socket分配处理逻辑对象
-    if (timeoutMS_ > 0) {
-        timer_->add(fd, timeoutMS_, std::bind(&WebServer::CloseConn_, this, &user_[fd]));
+    if (timeoutMS_ > 0) {  // 给该连接分配定时器
+        timer_->add(fd, timeoutMS_, std::bind(&WebServer::CloseConn_, this, &users_[fd]));
     }
     epoller_->AddFd(fd, EPOLLIN | connEvent_);   // 往epoll表中注册socket就绪事件
     SetFdNonblock(fd);
-    LOG_INFO("Client[%d] in!", users_->GetFd());
+    LOG_INFO("Client[%d] in!", users_[fd].GetFd());
 }
 
 /* 接受客户连接请求 */
@@ -147,7 +147,7 @@ void WebServer::DealListen_() {
         if (fd < 0) return;  // 当所有客户连接请求都被处理，此时会返回，也退出了while循环
         else if (HttpConn::userCount >= MAX_FD) {
             SendError_(fd, "Server busy!");
-            LOG_WARN("Client is full!");
+            LOG_WARN("Clients is full!");
             return;
         }
         AddClient_(fd, addr);
@@ -168,7 +168,7 @@ void WebServer::DealWrite_(HttpConn* client) {
     threadpool_->AddTask(std::bind(&WebServer::OnWrite_, this, client));
 }
 
-/* 扩充定时时间？当有新任务发生时就重置定时时间 */
+/* 扩充定时时间,当有新任务发生时就重置定时时间 */
 void WebServer::ExtentTime_(HttpConn* client) {
     assert(client);
     if(timeoutMS_ > 0) { timer_->adjust(client->GetFd(), timeoutMS_); }
@@ -188,7 +188,7 @@ void WebServer::OnRead_(HttpConn* client) {
 }
 
 /* 读缓冲区中数据的处理程序，根据处理结果决定是否监听socket写就绪事件 */
-void WebServer::OnProcess_(HttpConn* client) {
+void WebServer::OnProcess(HttpConn* client) {
     if(client->process()) {  // 从读缓冲区分析请求，并写应答报文
         epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT); // 返回数据准备好了，则监听socket写就绪事件
     } else {
@@ -200,8 +200,8 @@ void WebServer::OnProcess_(HttpConn* client) {
 void WebServer::OnWrite_(HttpConn* client) {
     assert(client);
     int ret = -1;
-    int Errno = 0;
-    ret = client->write(&writeErrno);
+    int writeErrno = 0;
+    ret = client->write(&writeErrno);  // 发送数据给客户
     if (client->ToWriteBytes() == 0) {
         // 传输完成
         if (client->IsKeepAlive()) {
@@ -211,7 +211,7 @@ void WebServer::OnWrite_(HttpConn* client) {
     }
     else if (ret < 0) {
         if (writeErrno == EAGAIN) {  // 可能是TCP写缓冲已满
-            // 继续传输
+            // 继续监听socket写就绪事件
             epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT);
             return;
         }
@@ -224,7 +224,7 @@ bool WebServer::InitSocket_() {
     int ret;
     struct sockaddr_in addr;
     if (port_ > 65535 || port_ < 1024) {  // port_是本地服务器的监听端口
-        LOG_ERROR("Port:%d Error", port_);
+        LOG_ERROR("Port:%d error", port_);
         return false;
     }
     addr.sin_family = AF_INET;
@@ -254,7 +254,7 @@ bool WebServer::InitSocket_() {
     /* 只有最后一个套接字会正常接收数据 */
     ret = setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, (const void*)&optval, sizeof(int));
     if (ret == -1) {
-        LOG_ERROR("set socket setsocketopt error");
+        LOG_ERROR("set socket setsockopt error");
         close(listenFd_);
         return false;
     }

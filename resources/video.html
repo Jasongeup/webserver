@@ -3,7 +3,7 @@
 
 <head>
      <meta charset="UTF-8">
-     <title>MARK-视频</title>
+     <title>webServer-视频</title>
      <link rel="icon" href="images/favicon.ico">
      <link rel="stylesheet" href="css/bootstrap.min.css">
      <link rel="stylesheet" href="css/animate.css">
@@ -11,6 +11,13 @@
      <link rel="stylesheet" href="css/font-awesome.min.css">
      <!-- Main css -->
      <link rel="stylesheet" href="css/style.css">
+     <style>
+          /* 强制覆盖默认样式，确保字体变大 */
+          .navbar-nav > li > a {
+               font-size: 20px !important;
+               font-weight: bold;
+          }
+     </style>
 </head>
 
 <body data-spy="scroll" data-target=".navbar-collapse" data-offset="50">
@@ -30,7 +37,7 @@
                          <span class="icon icon-bar"></span>
                          <span class="icon icon-bar"></span>
                     </button>
-                    <a href="/" class="navbar-brand">Mark</a>
+                    <a href="/" class="navbar-brand">webServer</a>
                </div>
                <div class="collapse navbar-collapse">
                     <ul class="nav navbar-nav navbar-right">
@@ -47,22 +54,20 @@
      <section id="home">
           <div class="container">
                <div class="row">
-                    <div class="col-md-offset-1 col-md-2 col-sm-3">
-                         <img src="images/profile-image.jpg" class="wow fadeInUp img-responsive img-circle"
-                              data-wow-delay="0.2s" alt="about image">
-                    </div>
-                    <div class="col-md-8 col-sm-8">
-                         <h1 class="wow fadeInUp" data-wow-delay="0.6s">视频测试</h1>
+                    <div class="col-xs-12 text-center">
+                         <h1 class="wow fadeInUp" data-wow-delay="0.6s" style="font-weight: bold; margin-top: 30px;">这是一段视频</h1>
+                         <img src="images/video_down.jpg" class="wow fadeInUp center-block" style="width:400px; height:auto; margin-top:30px;" data-wow-delay="0.2s" alt="about image">
+                         <!-- <a href="#" class="wow fadeInUp btn btn-default section-btn" data-wow-delay="1s">下载简历</a> -->
                     </div>
                </div>
-          </div>
+           </div>
      </section>
      <!-- HOME SECTION -->
      <section id="home">
           <div class="container">
                <div class="row">
                     <div align="center"><video width="906" height="506" controls>
-                              <source src="/video/xxx.mp4" type="video/mp4">
+                              <source src="video/video_1.mp4" type="video/mp4">
                          </video>
                     </div>
                </div>

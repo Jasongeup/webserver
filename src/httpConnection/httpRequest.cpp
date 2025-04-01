@@ -195,9 +195,9 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
     assert(sql);
     
     bool flag = false;
-    unsigned int j = 0;
+    // unsigned int j = 0;
     char order[256] = { 0 };
-    MYSQL_FIELD *fields = nullptr;
+    // MYSQL_FIELD *fields = nullptr;
     MYSQL_RES *res = nullptr;
     
     if(!isLogin) { flag = true; }
@@ -210,8 +210,8 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
         return false; 
     }
     res = mysql_store_result(sql);    // 保存查询结果？
-    j = mysql_num_fields(res);
-    fields = mysql_fetch_fields(res);
+    // j = mysql_num_fields(res);       // 获取查询结果有多少列
+    // fields = mysql_fetch_fields(res);  // 获取所有字段的元数据
 
     while(MYSQL_ROW row = mysql_fetch_row(res)) {   // 表示获取一行
         LOG_DEBUG("MYSQL ROW: %s %s", row[0], row[1]);  // 应该是用户名，密码

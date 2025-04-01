@@ -40,7 +40,7 @@ public:
         数据库名称，连接池的数量，线程池数量
         日志开关，日志等级，日志异步队列容量
     */
-    WebServer(int port, int trigMode, int timeoutMs, bool OptLinger,
+    WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               int sqlPort, const char* sqlUser, const char* sqlPwd,
               const char* dbName, int connPoolNum, int threadNum,
               bool openLog, int logLevel, int logQueSize);
