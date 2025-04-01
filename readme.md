@@ -11,7 +11,7 @@
 
 # 框架
 
-![server_framework](C:\Users\jiayan\Documents\postgraduate\job_related\project\server_framework.jpg)
+![server_framework](readme_asset/server_framework.jpg)
 
 
 
@@ -97,7 +97,7 @@ make
 
 使用webbench可以对服务器进行压力测试，因为本人的服务器运行在虚拟机，受性能限制，压力测试的结果并不代表服务器的最大并发数量：
 
-![webbench_10000](E:\ubuntu2\share_file\webbench_10000.png)
+![webbench_10000](readme_asset/webbench_10000.png)
 
 
 
