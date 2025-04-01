@@ -27,10 +27,10 @@
 #include "epoller.h"
 #include "../logsys/log.h"
 #include "../timer/heapTimer.h"
-#include "../pool/sqlconnpool.h"
-#include "../pool/threadpool.h"
-#include "../pool/sqlconnRAII.h"
-#include "../httpConnection/httpconn.h"
+#include "../pool/sqlConnPool.h"
+#include "../pool/threadPool.h"
+#include "../pool/sqlConnRAII.h"
+#include "../httpConnection/httpConn.h"
 
 class WebServer {
 public:

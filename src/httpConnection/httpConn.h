@@ -22,7 +22,7 @@
  #include <errno.h>      
  
  #include "../logsys/log.h"
- #include "../pool/sqlconnRAII.h"
+ #include "../pool/sqlConnRAII.h"
  #include "../buffer/buffer.h"
  #include "httpRequest.h"
  #include "httpResponse.h"
