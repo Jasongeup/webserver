@@ -17,9 +17,21 @@
 
 ## Demo演示
 
-<video width="520" height=auto controls>
-  <source src="readme_asset/demo2.mp4" type="video/mp4">
-</video>
+- 查看图片
+
+![查看服务器图片](readme_asset/demo_1.gif)
+
+- 查看视频
+
+![查看服务器视频](readme_asset/demo_2.gif)
+
+- 注册
+
+![注册](readme_asset/demo_3.gif)
+
+- 登录
+
+![登录](readme_asset/demo_4.gif)
 
 # 环境
 
