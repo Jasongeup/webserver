@@ -31,7 +31,7 @@ void HttpConn::init(int fd, const sockaddr_in& addr) {
     userCount++;
     addr_ = addr;
     fd_ = fd;
-    writeBuff_.RetrieveAll();
+    writeBuff_.RetrieveAll(); // writeBuff_通过Buffer类的默认构造函数隐式初始化了
     readBuff_.RetrieveAll();
     isClose_ = false;
     LOG_INFO("Client[%d](%s:%d) in, userCount:%d", fd_, GetIP(), GetPort(), (int)userCount);
