@@ -1,4 +1,4 @@
-/***********************************************************
+3/***********************************************************
  * FileName    : threadPool.h
  * Description : This header file define a class named threadPool.
  * 
@@ -25,7 +25,7 @@
      explicit ThreadPool(size_t threadCount = 8): pool_(std::make_shared<Pool>()) {
              assert(threadCount > 0);
              for(size_t i = 0; i < threadCount; i++) {
-                 std::thread([pool = pool_] {    // 创建多个线程，pool_是智能指针，这里捕获它之后会令引用计数+1
+                 std::thread([pool = pool_] {    // 创建多个线程，pool_是智能指针，这里捕获它之后会令引用计数+1， 这里是匿名thread对象
                      std::unique_lock<std::mutex> locker(pool->mtx);  // 对线程池的访问加锁
                      while(true) {
                          if(!pool->tasks.empty()) {   // 如果队列非空
@@ -36,7 +36,7 @@
                              locker.lock();   // 这时候要加锁，因为马上又到了本线程访问先线程池
                          } 
                          else if(pool->isClosed) break;  // 如果要关闭线程池
-                         else pool->cond.wait(locker);   // 如果队列为空，且不关闭线程池，则等待信号量
+                         else pool->cond.wait(locker);   // 如果队列为空，且不关闭线程池，则等待信号量，注意队列为空才阻塞，必须判空，不能无脑阻塞，这样效率才高
                      }
                  }).detach();  // 设置脱离线程
              }
@@ -62,7 +62,7 @@
      void AddTask(F&& task) {
          {
              std::lock_guard<std::mutex> locker(pool_->mtx);  // 对线程池的访问加锁
-             pool_->tasks.emplace(std::forward<F>(task));
+             pool_->tasks.emplace(std::forward<F>(task));   // forward用于完美转发，保持task参数的类别（此处是右值）
          }
          pool_->cond.notify_one();
      }
@@ -74,7 +74,7 @@
          bool isClosed;   // 是否关闭线程池
          std::queue<std::function<void()>> tasks;  // 任务队列，队列中的元素是返回值为空，没有参数的函数对象
      };
-     std::shared_ptr<Pool> pool_;   // 线程池的引用计数
+     std::shared_ptr<Pool> pool_;   // 线程池的引用计数，方便各线程持有线程池对象，用于访问队列
  };
  
  
