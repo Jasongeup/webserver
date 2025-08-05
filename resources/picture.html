@@ -25,6 +25,21 @@
                font-size: 20px !important;
                font-weight: bold;
           }
+          .nav-bar {
+            display: flex;
+            justify-content: center;
+            background-color: #f0f0f0;
+            padding: 10px 0;
+        }
+        .nav-item {
+            margin: 0 15px;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .nav-item:hover {
+            background-color: #e0e0e0;
+        }
      </style>
 
 </head>
@@ -104,6 +119,20 @@
      <script src="js/magnific-popup-options.js"></script>
      <script src="js/wow.min.js"></script>
      <script src="js/custom.js"></script>
+     <script>
+        function navigate(section) {
+            if (section === 'files') {
+                // 检查用户是否登录
+                if (!localStorage.getItem('token')) {
+                    alert('Please login to access files');
+                    return;
+                }
+                window.location.href = 'file.html';
+            } else {
+                // ... existing navigation logic ...
+            }
+        }
+     </script>
 
 </body>
 

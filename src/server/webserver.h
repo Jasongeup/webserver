@@ -45,6 +45,20 @@ public:
               const char* dbName, int connPoolNum, int threadNum,
               bool openLog, int logLevel, int logQueSize);
     
+    // 添加SSL相关成员
+    bool useSSL_;
+    SSL_CTX* sslCtx_;
+    
+    // 添加SSL初始化方法
+    bool InitSSL_();
+    
+    // 修改构造函数声明
+    WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
+              int sqlPort, const char* sqlUser, const char* sqlPwd,
+              const char* dbName, int connPoolNum, int threadNum,
+              bool openLog, int logLevel, int logQueSize, 
+              bool useSSL = false);  // 添加useSSL参数
+    
     ~WebServer();
     void Start();
 

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>File Manager</title>
+    <style>
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .upload-section { margin-bottom: 30px; padding: 20px; background: #f5f5f5; border-radius: 8px; }
+        .file-list { margin-top: 20px; }
+        .file-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        .file-actions { display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>File Manager</h1>
+        <div class="upload-section">
+            <h2>Upload File</h2>
+            <input type="file" id="fileInput">
+            <button onclick="uploadFile()">Upload</button>
+            <div id="uploadStatus"></div>
+        </div>
+        
+        <div class="file-list">
+            <h2>Your Files</h2>
+            <div id="filesContainer">Loading files...</div>
+        </div>
+    </div>
+
+    <script>
+        // 获取用户文件列表
+        async function loadFiles() {
+            try {
+                const response = await fetch('/api/file/list', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load files');
+                }
+                
+                const data = await response.json();
+                renderFiles(data.files);
+            } catch (error) {
+                console.error('Error loading files:', error);
+                document.getElementById('filesContainer').innerText = 'Error loading files';
+            }
+        }
+        
+        // 渲染文件列表
+        function renderFiles(files) {
+            const container = document.getElementById('filesContainer');
+            if (files.length === 0) {
+                container.innerHTML = '<p>No files uploaded yet</p>';
+                return;
+            }
+            
+            container.innerHTML = files.map(file => `
+                <div class="file-item">
+                    <div>
+                        <div>${file.filename}</div>
+                        <small>${new Date(parseInt(file.uploadTime) * 1000).toLocaleString()} | ${formatFileSize(file.size)}</small>
+                    </div>
+                    <div class="file-actions">
+                        <button onclick="downloadFile('${file.id}', '${file.filename}')">Download</button>
+                        <button onclick="deleteFile('${file.id}')">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 上传文件
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a file');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const response = await fetch('/api/file/upload', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({
+                            filename: file.name,
+                            content: e.target.result
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        document.getElementById('uploadStatus').innerText = 'File uploaded successfully';
+                        loadFiles(); // 刷新文件列表
+                    } else {
+                        document.getElementById('uploadStatus').innerText = 'Upload failed';
+                    }
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    document.getElementById('uploadStatus').innerText = 'Upload error';
+                }
+            };
+            
+            reader.readAsDataURL(file);
+        }
+        
+        // 下载文件
+        function downloadFile(fileId, filename) {
+            window.open(`/api/file/download?fileId=${fileId}`, '_blank');
+        }
+        
+        // 辅助函数：格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // 页面加载时获取文件列表
+        document.addEventListener('DOMContentLoaded', loadFiles);
+    </script>
+</body>
+</html>

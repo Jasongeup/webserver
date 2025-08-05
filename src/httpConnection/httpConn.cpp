@@ -64,41 +64,49 @@ int HttpConn::GetPort() const {
 }
 
 /* 将连接socket上的数据读入缓冲区 */
-ssize_t HttpConn::read(int* saveErrno) {
+ssize_t HttpConn::read(int* saveErrno, SSL* ssl) {
     ssize_t len = -1;
-    do {
-        len = readBuff_.ReadFd(fd_, saveErrno);
-        if (len <= 0) {
-            break;
-        }
-    } while (isET);  // ET模式下循环读用户数据
+    if (isSSL_ && ssl) {
+        len = SSL_read(ssl, readBuff_.WritePtr(), readBuff_.WritableBytes());
+    } else {
+        len = recv(fd_, readBuff_.WritePtr(), readBuff_.WritableBytes(), 0);
+    }
+    
+    if(len <= 0) {
+        *saveErrno = errno;
+        return len;
+    }
+    readBuff_.HasWritten(len);
     return len;
 }
 
 /* 将响应数据写入连接socket */
-ssize_t HttpConn::write(int* saveErrno) {
+ssize_t HttpConn::write(int* saveErrno, SSL* ssl) {
     ssize_t len = -1;
-    do {
-        len = writev(fd_, iov_, iovCnt_);  // 内存块集中写
-        if(len <= 0) {
-            *saveErrno = errno;
-            break;
+    if (isSSL_ && ssl) {
+        len = SSL_write(ssl, iov_, iovCnt_);
+    } else {
+        len = writev(fd_, iov_, iovCnt_);
+    }
+    
+    if(len <= 0) {
+        *saveErrno = errno;
+        return len;
+    }
+    if(iov_[0].iov_len + iov_[1].iov_len == 0) { return len; }
+    else if(static_cast<size_t>(len) > iov_[0].iov_len) {
+        iov_[1].iov_base = (uint8_t*) iov_[1].iov_base + (len - iov_[0].iov_len);
+        iov_[1].iov_len -= (len - iov_[0].iov_len);
+        if(iov_[0].iov_len) {
+            writeBuff_.RetrieveAll();
+            iov_[0].iov_len = 0;
         }
-        if(iov_[0].iov_len + iov_[1].iov_len  == 0) { break; } /* 传输结束 */
-        else if(static_cast<size_t>(len) > iov_[0].iov_len) { // 第一块发送完，第二块没有
-            iov_[1].iov_base = (uint8_t*) iov_[1].iov_base + (len - iov_[0].iov_len);
-            iov_[1].iov_len -= (len - iov_[0].iov_len);
-            if(iov_[0].iov_len) {
-                writeBuff_.RetrieveAll();
-                iov_[0].iov_len = 0;
-            }
-        }
-        else {   // 第一块没发送完
-            iov_[0].iov_base = (uint8_t*)iov_[0].iov_base + len; 
-            iov_[0].iov_len -= len; 
-            writeBuff_.Retrieve(len);
-        }
-    } while(isET || ToWriteBytes() > 10240);  // ET模式下循环写
+    }
+    else {
+        iov_[0].iov_base = (uint8_t*)iov_[0].iov_base + len; 
+        iov_[0].iov_len -= len; 
+        writeBuff_.Retrieve(len);
+    }
     return len;
 }
 

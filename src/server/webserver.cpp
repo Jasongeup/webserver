@@ -9,36 +9,52 @@
 ************************************************/
 
 #include "webserver.h"
+#include "../httpHandler/FileHandler.h"  // 添加文件处理头文件
 
 WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               int sqlPort, const char* sqlUser, const char* sqlPwd,
               const char* dbName, int connPoolNum, int threadNum,
-              bool openLog, int logLevel, int logQueSize):
+              bool openLog, int logLevel, int logQueSize, bool useSSL):
               port_(port), openLinger_(OptLinger), timeoutMS_(timeoutMS), isClose_(false),
-              timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller())
+              timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller()),
+              useSSL_(useSSL), sslCtx_(nullptr)  // 初始化SSL相关成员
 {
     srcDir_ = getcwd(nullptr, 256);
-    assert(srcDir_);  // 获取当前工作目录的绝对路径
-    strncat(srcDir_, "/resources/", 16);    // 附加到根目录末尾
-    HttpConn::userCount = 0;        // 静态成员变量初始化
+    assert(srcDir_);
+    strncat(srcDir_, "/resources/", 16);
+    HttpConn::userCount = 0;
     HttpConn::srcDir = srcDir_;
-    SqlConnPool::Instance()->Init("localhost", sqlPort, sqlUser, sqlPwd, dbName, connPoolNum); // 初始化数据库连接池
+    SqlConnPool::Instance()->Init("localhost", sqlPort, sqlUser, sqlPwd, dbName, connPoolNum);
+
+    // 添加文件路由映射
+    router_.addRoute("/api/file/upload", HttpMethod::POST, FileHandler::handleUpload);
+    router_.addRoute("/api/file/download", HttpMethod::GET, FileHandler::handleDownload);
+    router_.addRoute("/api/file/list", HttpMethod::GET, FileHandler::handleList);
+
+    // 如果启用SSL，初始化SSL上下文
+    if(useSSL_) {
+        if(!InitSSL_()) {
+            isClose_ = true;
+            LOG_ERROR("SSL initialization failed!");
+        }
+    }
 
     InitEventMode_(trigMode);
     if (!InitSocket_()) {isClose_ = true;}
 
-    if (openLog) {   // 记录参数的日志信息
-        Log::Instance()->init(logLevel, "./log", ".log", logQueSize);  // 创建日志实例，并初始化
+    if (openLog) {
+        Log::Instance()->init(logLevel, "./log", ".log", logQueSize);
         if (isClose_) {LOG_ERROR("==========Server init error!==========");}
         else {
-            LOG_INFO("==========Server init==========");  // 记录服务器初始化参数
+            LOG_INFO("==========Server init==========");
             LOG_INFO("Port:%d, OpenLinger:%s", port_, OptLinger?"true":"false");
             LOG_INFO("Listen Mode:%s, OpenConn Mode:%s",
                     (listenEvent_ & EPOLLET ? "ET" : "LT"),
-                    (connEvent_ & EPOLLET ? "ET" : "LT"));  // 记录事件触发模式
+                    (connEvent_ & EPOLLET ? "ET" : "LT"));
             LOG_INFO("LogSys level:%d", logLevel);
             LOG_INFO("srcDir:%s", HttpConn::srcDir);
             LOG_INFO("SqlConnPool num: %d, ThreadPool num: %d", connPoolNum, threadNum);
+            LOG_INFO("SSL Mode: %s", useSSL_ ? "Enabled" : "Disabled");  // 添加SSL状态日志
         }
     }
 }
@@ -119,9 +135,17 @@ void WebServer::SendError_(int fd, const char* info) {
 }
 
 /* 关闭客户连接，删除epoll事件，关闭连接*/
-void WebServer::CloseConn_(HttpConn* client) {  
+void WebServer::CloseConn_(HttpConn* client) {
     assert(client);
     LOG_INFO("Client[%d] quit!", client->GetFd());
+    
+    // 清理SSL资源
+    if (client->IsSSL()) {
+        SSL* ssl = client->GetSSL();
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+    }
+    
     epoller_->DelFd(client->GetFd());
     client->Close();
 }
@@ -129,13 +153,33 @@ void WebServer::CloseConn_(HttpConn* client) {
 /* 新连接到来，分配逻辑处理对象，注册读就绪事件 */
 void WebServer::AddClient_(int fd, sockaddr_in addr) {
     assert(fd > 0);
-    users_[fd].init(fd, addr);  // 给新连接socket分配处理逻辑对象
-    if (timeoutMS_ > 0) {  // 给该连接分配定时器
+    users_[fd].init(fd, addr);
+    
+    // 如果启用SSL，创建SSL对象并关联到socket
+    if (useSSL_ && sslCtx_) {
+        SSL* ssl = SSL_new(sslCtx_);
+        SSL_set_fd(ssl, fd);
+        
+        // 执行SSL握手
+        int ret = SSL_accept(ssl);
+        if (ret <= 0) {
+            int err = SSL_get_error(ssl, ret);
+            LOG_ERROR("SSL handshake failed: %d", err);
+            SSL_free(ssl);
+            close(fd);
+            return;
+        }
+        
+        // 设置HttpConn的SSL对象
+        users_[fd].SetSSL(ssl);
+    }
+    
+    if (timeoutMS_ > 0) {
         timer_->add(fd, timeoutMS_, std::bind(&WebServer::CloseConn_, this, &users_[fd]));
     }
-    epoller_->AddFd(fd, EPOLLIN | connEvent_);   // 往epoll表中注册socket就绪事件
+    epoller_->AddFd(fd, EPOLLIN | connEvent_);
     SetFdNonblock(fd);
-    LOG_INFO("Client[%d] in!", users_[fd].GetFd());
+    LOG_INFO("Client[%d] in! SSL: %s", users_[fd].GetFd(), useSSL_ ? "Yes" : "No");
 }
 
 /* 接受客户连接请求 */
@@ -179,12 +223,15 @@ void WebServer::OnRead_(HttpConn* client) {
     assert(client);
     int ret = -1;
     int readErrno = 0;
-    ret = client->read(&readErrno);  // 将连接socket上的数据读入缓冲区
-    if (ret <= 0 && readErrno != EAGAIN) { // 如果不是因为阻塞导致读失败，则关闭连接
+    
+    // 传递SSL对象给read方法
+    ret = client->read(&readErrno, client->GetSSL());
+    
+    if (ret <= 0 && readErrno != EAGAIN) {
         CloseConn_(client);
         return;
     }
-    OnProcess(client); 
+    OnProcess(client);
 }
 
 /* 读缓冲区中数据的处理程序，根据处理结果决定是否监听socket写就绪事件 */
@@ -201,17 +248,18 @@ void WebServer::OnWrite_(HttpConn* client) {
     assert(client);
     int ret = -1;
     int writeErrno = 0;
-    ret = client->write(&writeErrno);  // 发送数据给客户
+    
+    // 传递SSL对象给write方法
+    ret = client->write(&writeErrno, client->GetSSL());
+    
     if (client->ToWriteBytes() == 0) {
-        // 传输完成
         if (client->IsKeepAlive()) {
             OnProcess(client);
             return;
         }
     }
     else if (ret < 0) {
-        if (writeErrno == EAGAIN) {  // 可能是TCP写缓冲已满
-            // 继续监听socket写就绪事件
+        if (writeErrno == EAGAIN) {
             epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT);
             return;
         }
@@ -286,4 +334,30 @@ bool WebServer::InitSocket_() {
 int WebServer::SetFdNonblock(int fd) {
     assert(fd > 0);
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFD, 0) | O_NONBLOCK);
+}
+
+// 添加SSL初始化函数实现
+bool WebServer::InitSSL_() {
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    
+    const SSL_METHOD *method = TLS_server_method();
+    sslCtx_ = SSL_CTX_new(method);
+    if (!sslCtx_) {
+        LOG_ERROR("SSL_CTX_new failed");
+        return false;
+    }
+    
+    // 加载证书和私钥 - 需要用户提供实际路径
+    if (SSL_CTX_use_certificate_file(sslCtx_, "/path/to/cert.pem", SSL_FILETYPE_PEM) <= 0) {
+        LOG_ERROR("Load certificate failed");
+        return false;
+    }
+    if (SSL_CTX_use_PrivateKey_file(sslCtx_, "/path/to/key.pem", SSL_FILETYPE_PEM) <= 0) {
+        LOG_ERROR("Load private key failed");
+        return false;
+    }
+    
+    return true;
 }

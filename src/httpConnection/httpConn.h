@@ -65,6 +65,20 @@
      
  private:
     
+    // 添加SSL支持
+    SSL* ssl_;
+    bool isSSL_;
+    
+    // 修改读写函数声明
+    ssize_t read(int* saveErrno, SSL* ssl = nullptr);
+    ssize_t write(int* saveErrno, SSL* ssl = nullptr);
+    
+    // 添加SSL设置方法
+    void SetSSL(SSL* ssl) { 
+        ssl_ = ssl; 
+        isSSL_ = (ssl != nullptr);
+    }
+    
      int fd_;
      struct  sockaddr_in addr_;
  
