@@ -26,6 +26,16 @@
 #include "blockQueue.h"
 #include "../buffer/buffer.h"
 
+struct TimeCache {
+    char date[16];
+    int hour, min, sec, mday;
+    time_t lastSec;
+    
+    TimeCache();
+    void Update(const struct tm& t, time_t tSec);
+    void Tick();
+};
+
 class Log {
 public:
     void init(int level, const char* path = "./log", 
@@ -60,6 +70,7 @@ private:
 
     int lineCount_;
     int toDay_;  // 今天是每月的第几天
+    TimeCache timeCache_;
 
     bool isOpen_;
  

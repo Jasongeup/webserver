@@ -11,6 +11,26 @@
 
 using namespace std;
 
+TimeCache::TimeCache() : hour(0), min(0), sec(0), mday(0), lastSec(0) {
+    date[0] = '\0';
+}
+
+void TimeCache::Update(const struct tm& t, time_t tSec) {
+    strftime(date, sizeof(date), "%Y-%m-%d ", &t);
+    hour = t.tm_hour;
+    min = t.tm_min;
+    sec = t.tm_sec;
+    mday = t.tm_mday;
+    lastSec = tSec;
+}
+
+void TimeCache::Tick() {
+    ++sec;
+    if (sec >= 60) { sec = 0; ++min; }
+    if (min >= 60) { min = 0; ++hour; }
+    lastSec++;
+}
+
 Log::Log() {
     lineCount_ = 0;
     isAsync_ = false;
@@ -99,43 +119,51 @@ void Log::write(int level, const char *format, ...) {
     struct timeval now = {0, 0};   // (s, ms)
     gettimeofday(&now, nullptr);   //获取当前的系统时间
     time_t tSec = now.tv_sec;
-    struct tm *sysTime = localtime(&tSec);  // 转换成当地时间的年月日
-    struct tm t = *sysTime;
     va_list vaList;   // 初始化一个变参对象
 
-    /* 日志日期 日志行数 */
-    if (toDay_ != t.tm_mday || (lineCount_ && (lineCount_  %  MAX_LINES == 0)))
-    {  // 如果日志不是今天（应该指日志的对象里的天数不是今天？）或者写入的日志行数是最大行的倍数，都要创建新文件
-        unique_lock<mutex> locker(mtx_);
-        locker.unlock();
-        
-        char newFile[LOG_NAME_LEN];
-        char tail[36] = {0};   // 存储今天的年月日
-        snprintf(tail, 36, "%04d_%02d_%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday);
+    if (tSec != timeCache_.lastSec) {
+        if (tSec == timeCache_.lastSec + 1) {
+            timeCache_.Tick();
+        } else {
+            struct tm t;
+            localtime_r(&tSec, &t);
+            timeCache_.Update(t, tSec);
+        }
+        /* 日志日期 日志行数 */
+        if (toDay_ != timeCache_.mday || (lineCount_ && (lineCount_ % MAX_LINES == 0))) {
+         // 如果日志不是今天（应该指日志的对象里的天数不是今天？）或者写入的日志行数是最大行的倍数，都要创建新文件
+            unique_lock<mutex> locker(mtx_);
+            locker.unlock();
+            
+            char newFile[LOG_NAME_LEN];
+            char tail[36] = {0};   // 存储今天的年月日
+            int year, month, day;
+            sscanf(timeCache_.date, "%d-%d-%d", &year, &month, &day);
+            snprintf(tail, 36, "%04d_%02d_%02d", year, month, day);
 
-        if (toDay_ != t.tm_mday)   // 如果不是今天
-        {
-            snprintf(newFile, LOG_NAME_LEN - 72, "%s/%s%s", path_, tail, suffix_); // 根据今天创建新文件名
-            toDay_ = t.tm_mday;   // 改变成员变量为今天
-            lineCount_ = 0;       // 重置行数为0
+            if (toDay_ != timeCache_.mday)   // 如果不是今天
+            {
+                snprintf(newFile, LOG_NAME_LEN - 72, "%s/%s%s", path_, tail, suffix_); // 根据今天创建新文件名
+                toDay_ = timeCache_.mday;  // 改变成员变量为今天
+                lineCount_ = 0;       // 重置行数为0
+            }
+            else {  // 否则说明文件写满了，新文件名要添加是当天的第几个日志文件
+                snprintf(newFile, LOG_NAME_LEN - 72, "%s/%s-%d%s", path_, tail, (lineCount_  / MAX_LINES), suffix_);
+            }
+            
+            locker.lock();   // 后面的操作需要互斥
+            flush();
+            fclose(fp_);   // 关闭旧文件
+            fp_ = fopen(newFile, "a");  // 打开新文件
+            assert(fp_ != nullptr);
         }
-        else {  // 否则说明文件写满了，新文件名要添加是当天的第几个日志文件
-            snprintf(newFile, LOG_NAME_LEN - 72, "%s/%s-%d%s", path_, tail, (lineCount_  / MAX_LINES), suffix_);
-        }
-        
-        locker.lock();   // 后面的操作需要互斥
-        flush();
-        fclose(fp_);   // 关闭旧文件
-        fp_ = fopen(newFile, "a");  // 打开新文件
-        assert(fp_ != nullptr);
     }
 
     {
         unique_lock<mutex> locker(mtx_);
         lineCount_++;
-        int n = snprintf(buff_.BeginWrite(), 128, "%d-%02d-%02d %02d:%02d:%02d.%06ld ",
-                    t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-                    t.tm_hour, t.tm_min, t.tm_sec, now.tv_usec);  // 往写缓冲区中先写入时间
+        int n = snprintf(buff_.BeginWrite(), 64, "%s%02d:%02d:%02d.%06ld ",
+        timeCache_.date, timeCache_.hour, timeCache_.min, timeCache_.sec, now.tv_usec);  // 往写缓冲区中先写入时间
                     
         buff_.HasWritten(n);   // 更新写缓冲区指针
         AppendLogLevelTitle_(level);  // 插入日志级别
