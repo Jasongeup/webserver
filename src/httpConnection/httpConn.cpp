@@ -8,6 +8,7 @@
  * Created on  : 2025/03/27
 ************************************************/
 #include "httpConn.h"
+#include <openssl/ssl.h>  // 添加SSL支持
 using namespace std;
 
 const char* HttpConn::srcDir;
@@ -19,6 +20,7 @@ HttpConn::HttpConn() {
     fd_ = -1;
     addr_ = { 0 };
     isClose_ = true;
+    ssl_ = nullptr;  // 初始化SSL指针
 };
 
 HttpConn::~HttpConn() { 
@@ -26,11 +28,12 @@ HttpConn::~HttpConn() {
 };
 
 /* 根据与客户的连接socket，客户端的socket地址初始化对象 */
-void HttpConn::init(int fd, const sockaddr_in& addr) {
+void HttpConn::init(int fd, const sockaddr_in& addr, SSL* ssl) {  // 添加SSL参数
     assert(fd > 0);
     userCount++;
     addr_ = addr;
     fd_ = fd;
+    ssl_ = ssl;  // 设置SSL对象
     writeBuff_.RetrieveAll(); // writeBuff_通过Buffer类的默认构造函数隐式初始化了
     readBuff_.RetrieveAll();
     isClose_ = false;
@@ -42,6 +45,11 @@ void HttpConn::Close() {
     if(isClose_ == false){
         isClose_ = true; 
         userCount--;
+        if (ssl_) {
+            SSL_shutdown(ssl_);  // 优雅关闭SSL连接
+            SSL_free(ssl_);
+            ssl_ = nullptr;
+        }
         close(fd_);
         LOG_INFO("Client[%d](%s:%d) quit, UserCount:%d", fd_, GetIP(), GetPort(), (int)userCount);
     }
@@ -67,7 +75,11 @@ int HttpConn::GetPort() const {
 ssize_t HttpConn::read(int* saveErrno) {
     ssize_t len = -1;
     do {
-        len = readBuff_.ReadFd(fd_, saveErrno);
+        if (ssl_) {
+            len = readBuff_.ReadFdSSL(ssl_, saveErrno);  // 使用SSL读取
+        } else {
+            len = readBuff_.ReadFd(fd_, saveErrno);  // 普通读取
+        }
         if (len <= 0) {
             break;
         }
@@ -75,30 +87,52 @@ ssize_t HttpConn::read(int* saveErrno) {
     return len;
 }
 
-/* 将响应数据写入连接socket */
+/* 将缓冲区数据写入socket */
 ssize_t HttpConn::write(int* saveErrno) {
     ssize_t len = -1;
     do {
-        len = writev(fd_, iov_, iovCnt_);  // 内存块集中写
-        if(len <= 0) {
-            *saveErrno = errno;
-            break;
-        }
-        if(iov_[0].iov_len + iov_[1].iov_len  == 0) { break; } /* 传输结束 */
-        else if(static_cast<size_t>(len) > iov_[0].iov_len) { // 第一块发送完，第二块没有
-            iov_[1].iov_base = (uint8_t*) iov_[1].iov_base + (len - iov_[0].iov_len);
-            iov_[1].iov_len -= (len - iov_[0].iov_len);
-            if(iov_[0].iov_len) {
-                writeBuff_.RetrieveAll();
-                iov_[0].iov_len = 0;
+        if (ssl_) {
+            // SSL写入
+            len = SSL_write(ssl_, iov_[0].iov_base, iov_[0].iov_len);
+            if(len <= 0) {
+                *saveErrno = SSL_get_error(ssl_, len);
+                break;
+            }
+            if(static_cast<size_t>(len) > iov_[0].iov_len) {
+                iov_[1].iov_base = (uint8_t*) iov_[1].iov_base + (len - iov_[0].iov_len);
+                iov_[1].iov_len -= (len - iov_[0].iov_len);
+                if(iov_[0].iov_len) {
+                    writeBuff_.RetrieveAll();
+                    iov_[0].iov_len = 0;
+                }
+            }
+            else {
+                iov_[0].iov_base = (uint8_t*)iov_[0].iov_base + len; 
+                iov_[0].iov_len -= len; 
+                writeBuff_.Retrieve(len);
+            }
+        } else {
+            // 普通HTTP写入
+            len = writev(fd_, iov_, iovCnt_);
+            if(len <= 0) {
+                *saveErrno = errno;
+                break;
+            }
+            if(static_cast<size_t>(len) > iov_[0].iov_len) {
+                iov_[1].iov_base = (uint8_t*) iov_[1].iov_base + (len - iov_[0].iov_len);
+                iov_[1].iov_len -= (len - iov_[0].iov_len);
+                if(iov_[0].iov_len) {
+                    writeBuff_.RetrieveAll();
+                    iov_[0].iov_len = 0;
+                }
+            }
+            else {
+                iov_[0].iov_base = (uint8_t*)iov_[0].iov_base + len; 
+                iov_[0].iov_len -= len; 
+                writeBuff_.Retrieve(len);
             }
         }
-        else {   // 第一块没发送完
-            iov_[0].iov_base = (uint8_t*)iov_[0].iov_base + len; 
-            iov_[0].iov_len -= len; 
-            writeBuff_.Retrieve(len);
-        }
-    } while(isET || ToWriteBytes() > 10240);  // ET模式下循环写
+    } while (isET || ToWriteBytes() > 10240);
     return len;
 }
 

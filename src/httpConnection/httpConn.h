@@ -33,7 +33,7 @@
  
      ~HttpConn();
  
-     void init(int sockFd, const sockaddr_in& addr);
+     void init(int sockFd, const sockaddr_in& addr, SSL* ssl = nullptr);
  
      ssize_t read(int* saveErrno);
  

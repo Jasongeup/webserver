@@ -8,6 +8,7 @@
  * Created on  : 2025/03/28
 ************************************************/
 #include "buffer.h"
+#include <openssl/ssl.h>  // 添加SSL支持
 
 Buffer::Buffer(int initBuffSize) : buffer_(initBuffSize), readPos_(0), writePos_(0) {}
 
@@ -146,6 +147,54 @@ char* Buffer::BeginPtr_() {
 /* 返回指向缓冲区起始位置的const指针 */
 const char* Buffer::BeginPtr_() const {
     return &*buffer_.begin();
+}
+
+/* 添加SSL读取方法 */
+ssize_t Buffer::ReadFdSSL(SSL* ssl, int* saveErrno) {
+    char buff[65535];
+    const size_t writable = WritableBytes();
+    
+    // 先读取到主缓冲区
+    ssize_t len = SSL_read(ssl, BeginPtr_() + writePos_, writable);
+    if (len > 0) {
+        writePos_ += len;
+        return len;
+    }
+    
+    // 如果主缓冲区已满或需要更多空间
+    if (len <= 0) {
+        int ssl_err = SSL_get_error(ssl, len);
+        if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE) {
+            // 非致命错误，继续尝试读取
+            *saveErrno = EAGAIN;
+            return -1;
+        } else {
+            // 致命错误
+            *saveErrno = ssl_err;
+            return -1;
+        }
+    }
+    
+    // 如果还有额外数据，读取到临时缓冲区
+    ssize_t additional_len = SSL_read(ssl, buff, sizeof(buff));
+    if (additional_len > 0) {
+        Append(buff, additional_len);
+        return len + additional_len;
+    }
+    
+    return len;
+}
+
+/* 添加SSL写入方法 */
+ssize_t Buffer::WriteFdSSL(SSL* ssl, int* saveErrno) {
+    size_t readSize = ReadableBytes();
+    ssize_t len = SSL_write(ssl, Peek(), readSize);
+    if(len < 0) {
+        *saveErrno = SSL_get_error(ssl, len);
+        return len;
+    } 
+    readPos_ += len;
+    return len;
 }
 
 /* 若缓冲区有len大小的空闲，则整理空闲空间，否则扩容 */

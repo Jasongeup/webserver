@@ -9,13 +9,17 @@
 ************************************************/
 
 #include "webserver.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               int sqlPort, const char* sqlUser, const char* sqlPwd,
               const char* dbName, int connPoolNum, int threadNum,
-              bool openLog, int logLevel, int logQueSize):
+              bool openLog, int logLevel, int logQueSize, 
+              bool useSSL, const char* certPath, const char* keyPath):
               port_(port), openLinger_(OptLinger), timeoutMS_(timeoutMS), isClose_(false),
-              timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller())
+              timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller()),
+              useSSL_(useSSL), certPath_(certPath), keyPath_(keyPath), sslCtx_(nullptr)
 {
     srcDir_ = getcwd(nullptr, 256);
     assert(srcDir_);  // 获取当前工作目录的绝对路径
@@ -24,6 +28,10 @@ WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
     HttpConn::srcDir = srcDir_;
     SqlConnPool::Instance()->Init("localhost", sqlPort, sqlUser, sqlPwd, dbName, connPoolNum); // 初始化数据库连接池
 
+    if (useSSL_) {
+        InitSSL_();
+    }
+    
     InitEventMode_(trigMode);
     if (!InitSocket_()) {isClose_ = true;}
 
@@ -39,6 +47,9 @@ WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
             LOG_INFO("LogSys level:%d", logLevel);
             LOG_INFO("srcDir:%s", HttpConn::srcDir);
             LOG_INFO("SqlConnPool num: %d, ThreadPool num: %d", connPoolNum, threadNum);
+            if (useSSL_) {
+                LOG_INFO("SSL enabled, Cert: %s, Key: %s", certPath_, keyPath_);
+            }
         }
     }
 }
@@ -48,6 +59,9 @@ WebServer::~WebServer() {
     isClose_ = true;
     free(srcDir_);
     SqlConnPool::Instance()->ClosePool();
+    if (useSSL_) {
+        CleanupSSL_();
+    }
 }
 
 void WebServer::InitEventMode_(int trigMode) {
@@ -286,4 +300,45 @@ bool WebServer::InitSocket_() {
 int WebServer::SetFdNonblock(int fd) {
     assert(fd > 0);
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFD, 0) | O_NONBLOCK);
+}
+
+/* 初始化SSL上下文 */
+void WebServer::InitSSL_() {
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    sslCtx_ = SSL_CTX_new(TLS_server_method());
+    if (!sslCtx_) {
+        LOG_ERROR("Create SSL context failed");
+        isClose_ = true;
+        return;
+    }
+    
+    if (SSL_CTX_use_certificate_file(sslCtx_, certPath_, SSL_FILETYPE_PEM) <= 0) {
+        LOG_ERROR("Load certificate failed");
+        ERR_print_errors_fp(stderr);
+        isClose_ = true;
+        return;
+    }
+    
+    if (SSL_CTX_use_PrivateKey_file(sslCtx_, keyPath_, SSL_FILETYPE_PEM) <= 0) {
+        LOG_ERROR("Load private key failed");
+        ERR_print_errors_fp(stderr);
+        isClose_ = true;
+        return;
+    }
+    
+    if (!SSL_CTX_check_private_key(sslCtx_)) {
+        LOG_ERROR("Private key does not match certificate");
+        isClose_ = true;
+    }
+}
+
+/* 清理SSL资源 */
+void WebServer::CleanupSSL_() {
+    if (sslCtx_) {
+        SSL_CTX_free(sslCtx_);
+        sslCtx_ = nullptr;
+    }
+    EVP_cleanup();
 }
