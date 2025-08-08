@@ -151,7 +151,8 @@ const char* Buffer::BeginPtr_() const {
 /* 若缓冲区有len大小的空闲，则整理空闲空间，否则扩容 */
 void Buffer::MakeSpace_(size_t len) {
     if(WritableBytes() + PrependableBytes() < len) { // 如果缓冲区所有剩余空间都不足len，则调整缓冲区大小
-        buffer_.resize(writePos_ + len + 1);
+        size_t newCapacity = std::max(2 * buffer_.size(), writePos_ + len);
+        buffer_.resize(newCapacity);
     } 
     else {  // 如果空间够，则整理空间，把缓冲区数据移到开头，更新读、写起始位置
         size_t readable = ReadableBytes();

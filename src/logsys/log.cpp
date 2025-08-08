@@ -115,7 +115,7 @@ void Log::init(int level = 1, const char* path, const char* suffix,
 }
 
 /* 写日志，先判断要不要创建新日志文件，再往写缓冲区中写入信息，之后根据是否异步写日志文件 */
-void Log::write(int level, const char *format, ...) {
+void Log::write(int level, const char* file, const int line, const char* module, const char *format, ...) {
     struct timeval now = {0, 0};   // (s, ms)
     gettimeofday(&now, nullptr);   //获取当前的系统时间
     time_t tSec = now.tv_sec;
@@ -162,11 +162,32 @@ void Log::write(int level, const char *format, ...) {
     {
         unique_lock<mutex> locker(mtx_);
         lineCount_++;
+
+        ostringstream oss;
+        oss << this_thread::get_id();
+        string threadIdStr = oss.str();
+
         int n = snprintf(buff_.BeginWrite(), 64, "%s%02d:%02d:%02d.%06ld ",
         timeCache_.date, timeCache_.hour, timeCache_.min, timeCache_.sec, now.tv_usec);  // 往写缓冲区中先写入时间
                     
         buff_.HasWritten(n);   // 更新写缓冲区指针
+
+        // 线程id
+        n = snprintf(buff_.BeginWrite(), 32, "[%s]", threadIdStr.c_str());
+        buff_.HasWritten(n);
+
         AppendLogLevelTitle_(level);  // 插入日志级别
+
+        // 文件名和行号
+        if(file) {
+            n = snprintf(buff_.BeginWrite(), 128, "[%s:%d] ", file, line);
+            buff_.HasWritten(n);
+        }
+
+        // 模块名
+        module = module ? module : "unknown";
+        n = snprintf(buff_.BeginWrite(), 64, "[%s]", module);
+        buff_.HasWritten(n);
 
         va_start(vaList, format);   // 获取format后面的所有可变参数，存储到vaList
         int m = vsnprintf(buff_.BeginWrite(), buff_.WritableBytes(), format, vaList); // 消息写入到缓冲区中

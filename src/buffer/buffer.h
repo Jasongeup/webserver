@@ -23,6 +23,7 @@
  #include <vector>
  #include <atomic>
  #include <assert.h>
+ #include <algorithm>
  class Buffer {
  public:
      Buffer(int initBuffSize = 1024);
