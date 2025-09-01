@@ -143,8 +143,24 @@ void WebServer::CloseConn_(HttpConn* client) {
 
 /* 新连接到来，分配逻辑处理对象，注册读就绪事件 */
 void WebServer::AddClient_(int fd, sockaddr_in addr) {
+    if (useSSL_ && !sslCtx_) {
+        LOG_ERROR(MODULE_WEBSERVER, "SSL context not initialized");
+        return;
+    }
+    
     assert(fd > 0);
-    users_[fd].init(fd, addr);  // 给新连接socket分配处理逻辑对象
+
+    SSL* ssl = nullptr;
+    if (useSSL_) {
+        ssl = SSL_new(sslCtx_);
+        SSL_set_fd(ssl, fd);
+        if (SSL_accept(ssl) <= 0) {
+            SSL_free(ssl);
+            return;
+        }
+    }
+    
+    users_[fd].init(fd, addr, ssl);  // 给新连接socket分配处理逻辑对象
     if (timeoutMS_ > 0) {  // 给该连接分配定时器
         timer_->add(fd, timeoutMS_, std::bind(&WebServer::CloseConn_, this, &users_[fd]));
     }
@@ -310,27 +326,27 @@ void WebServer::InitSSL_() {
     SSL_load_error_strings();
     sslCtx_ = SSL_CTX_new(TLS_server_method());
     if (!sslCtx_) {
-        LOG_ERROR("Create SSL context failed");
+        LOG_ERROR(MODULE_WEBSERVER, "Create SSL context failed");
         isClose_ = true;
         return;
     }
     
     if (SSL_CTX_use_certificate_file(sslCtx_, certPath_, SSL_FILETYPE_PEM) <= 0) {
-        LOG_ERROR("Load certificate failed");
+        LOG_ERROR(MODULE_WEBSERVER, "Load certificate failed");
         ERR_print_errors_fp(stderr);
         isClose_ = true;
         return;
     }
     
     if (SSL_CTX_use_PrivateKey_file(sslCtx_, keyPath_, SSL_FILETYPE_PEM) <= 0) {
-        LOG_ERROR("Load private key failed");
+        LOG_ERROR(MODULE_WEBSERVER, "Load private key failed");
         ERR_print_errors_fp(stderr);
         isClose_ = true;
         return;
     }
     
     if (!SSL_CTX_check_private_key(sslCtx_)) {
-        LOG_ERROR("Private key does not match certificate");
+        LOG_ERROR(MODULE_WEBSERVER, "Private key does not match certificate");
         isClose_ = true;
     }
 }

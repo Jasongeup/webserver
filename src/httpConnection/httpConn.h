@@ -20,8 +20,10 @@
  #include <arpa/inet.h>   // sockaddr_in
  #include <stdlib.h>      // atoi()
  #include <errno.h>      
- #include <string>
- 
+ #include <openssl/ssl.h>  // 添加SSL支持
+ #include <algorithm>
+ #include <openssl/err.h>
+  
  #include "../logsys/log.h"
  #include "../pool/sqlConnRAII.h"
  #include "../buffer/buffer.h"
@@ -34,7 +36,7 @@
  
      ~HttpConn();
  
-     void init(int sockFd, const sockaddr_in& addr, SSL* ssl = nullptr);
+     void init(int sockFd, const sockaddr_in& addr, SSL* ssl);
  
      ssize_t read(int* saveErrno);
  
@@ -70,6 +72,7 @@
      struct  sockaddr_in addr_;
  
      bool isClose_;
+     SSL* ssl_;
      
      int iovCnt_;  // 有数据的块的数量
      struct iovec iov_[2];  // 集中写内存块，用于发送数据
@@ -79,6 +82,7 @@
  
      HttpRequest request_;  // 解析客户请求  
      HttpResponse response_;  // 响应客户请求
+
  };
  
  
