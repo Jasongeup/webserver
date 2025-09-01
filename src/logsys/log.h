@@ -23,8 +23,19 @@
 #include <stdarg.h>           // vastart va_end
 #include <assert.h>
 #include <sys/stat.h>         //mkdir
+#include <sstream>
 #include "blockQueue.h"
 #include "../buffer/buffer.h"
+
+struct TimeCache {
+    char date[16];
+    int hour, min, sec, mday;
+    time_t lastSec;
+    
+    TimeCache();
+    void Update(const struct tm& t, time_t tSec);
+    void Tick();
+};
 
 class Log {
 public:
@@ -35,7 +46,7 @@ public:
     static Log* Instance();   //单例懒汉模式
     static void FlushLogThread();
 
-    void write(int level, const char *format,...);
+    void write(int level, const char* file, int line, const char* module, const char *format, ...);
     void flush();
 
     int GetLevel();
@@ -60,6 +71,7 @@ private:
 
     int lineCount_;
     int toDay_;  // 今天是每月的第几天
+    TimeCache timeCache_;
 
     bool isOpen_;
  
@@ -73,18 +85,25 @@ private:
     std::mutex mtx_;
 };
 
-#define LOG_BASE(level, format, ...) \
+#define LOG_BASE(level, module, format, ...) \
     do {\
         Log* log = Log::Instance();\
         if (log->IsOpen() && log->GetLevel() <= level) {\
-            log->write(level, format, ##__VA_ARGS__); \
+            log->write(level, __FILE__, __LINE__, module, format, ##__VA_ARGS__); \
             log->flush();\
         }\
     } while(0);
 
-#define LOG_DEBUG(format, ...) do {LOG_BASE(0, format, ##__VA_ARGS__)} while(0);
-#define LOG_INFO(format, ...) do {LOG_BASE(1, format, ##__VA_ARGS__)} while(0);
-#define LOG_WARN(format, ...) do {LOG_BASE(2, format, ##__VA_ARGS__)} while(0);
-#define LOG_ERROR(format, ...) do {LOG_BASE(3, format, ##__VA_ARGS__)} while(0);
+#define LOG_DEBUG(module, format, ...) do {LOG_BASE(0, module, format, ##__VA_ARGS__)} while(0);
+#define LOG_INFO(module, format, ...) do {LOG_BASE(1, module, format, ##__VA_ARGS__)} while(0);
+#define LOG_WARN(module, format, ...) do {LOG_BASE(2, module, format, ##__VA_ARGS__)} while(0);
+#define LOG_ERROR(module, format, ...) do {LOG_BASE(3, module, format, ##__VA_ARGS__)} while(0);
+
+const char MODULE_HTTPREQ[] = "HTTPREQ";
+const char MODULE_HTTPRES[] = "HTTPRES";
+const char MODULE_TEST[] = "TEST";
+const char MODULE_SQL[] = "SQL";
+const char MODULE_HTTP[] = "HTTP";
+const char MODULE_WEBSERVER[] = "WEBSERVER";
 
 #endif //LOG_H

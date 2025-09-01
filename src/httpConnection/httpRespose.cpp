@@ -144,7 +144,7 @@ void HttpResponse::AddContent_(Buffer& buff) { // 这里只要把消息体长度
 
     /* 将文件映射到内存提高文件的访问速度 
         MAP_PRIVATE 建立一个写入时拷贝的私有映射*/
-    LOG_DEBUG("file path %s", (srcDir_ + path_).data());
+    LOG_DEBUG(MODULE_HTTPRES, "file path %s", (srcDir_ + path_).data());
     int* mmRet = (int*)mmap(0, mmFileStat_.st_size, PROT_READ, MAP_PRIVATE, srcFd, 0); // 由内核自动分配内存
     if(*mmRet == -1) {  // mmap返回指向目标内存区域的指针
         ErrorContent(buff, "File NotFound!");
