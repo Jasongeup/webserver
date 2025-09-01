@@ -34,7 +34,7 @@ void HttpConn::init(int fd, const sockaddr_in& addr) {
     writeBuff_.RetrieveAll(); // writeBuff_通过Buffer类的默认构造函数隐式初始化了
     readBuff_.RetrieveAll();
     isClose_ = false;
-    LOG_INFO("Client[%d](%s:%d) in, userCount:%d", fd_, GetIP(), GetPort(), (int)userCount);
+    LOG_INFO(MODULE_HTTP, "Client[%d](%s:%d) in, userCount:%d", fd_, GetIP(), GetPort(), (int)userCount);
 }
 
 void HttpConn::Close() {
@@ -43,7 +43,7 @@ void HttpConn::Close() {
         isClose_ = true; 
         userCount--;
         close(fd_);
-        LOG_INFO("Client[%d](%s:%d) quit, UserCount:%d", fd_, GetIP(), GetPort(), (int)userCount);
+        LOG_INFO(MODULE_HTTP, "Client[%d](%s:%d) quit, UserCount:%d", fd_, GetIP(), GetPort(), (int)userCount);
     }
 }
 
@@ -109,7 +109,7 @@ bool HttpConn::process() {
         return false;
     }
     else if(request_.parse(readBuff_)) {  // 调用成员类的方法读数据
-        LOG_DEBUG("%s", request_.path().c_str());
+        LOG_DEBUG(MODULE_HTTP, "%s", request_.path().c_str());
         response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 200); //初始化相应数据类成员
     } else {  // 如果读失败？
         response_.Init(srcDir, request_.path(), false, 400);
@@ -127,6 +127,6 @@ bool HttpConn::process() {
         iov_[1].iov_len = response_.FileLen();
         iovCnt_ = 2;
     }
-    LOG_DEBUG("filesize:%d, %d  to %d", response_.FileLen() , iovCnt_, ToWriteBytes());
+    LOG_DEBUG(MODULE_HTTP, "filesize:%d, %d  to %d", response_.FileLen() , iovCnt_, ToWriteBytes());
     return true;
 }

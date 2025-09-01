@@ -99,4 +99,11 @@ private:
 #define LOG_WARN(module, format, ...) do {LOG_BASE(2, module, format, ##__VA_ARGS__)} while(0);
 #define LOG_ERROR(module, format, ...) do {LOG_BASE(3, module, format, ##__VA_ARGS__)} while(0);
 
+const char MODULE_HTTPREQ[] = "HTTPREQ";
+const char MODULE_HTTPRES[] = "HTTPRES";
+const char MODULE_TEST[] = "TEST";
+const char MODULE_SQL[] = "SQL";
+const char MODULE_HTTP[] = "HTTP";
+const char MODULE_WEBSERVER[] = "WEBSERVER";
+
 #endif //LOG_H

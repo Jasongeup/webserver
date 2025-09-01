@@ -32,14 +32,14 @@
          MYSQL *sql = nullptr;
          sql = mysql_init(sql);
          if (!sql) {
-             LOG_ERROR("MySql init error!");
+             LOG_ERROR(MODULE_SQL, "MySql init error!");
              assert(sql);
          }
          sql = mysql_real_connect(sql, host,
                                   user, pwd,
                                   dbName, port, nullptr, 0); // 连接数据库
          if (!sql) {
-             LOG_ERROR("MySql Connect error!");
+             LOG_ERROR(MODULE_SQL, "MySql Connect error!");
          }
          connQue_.push(sql);  // 将连接的数据库插入到连接队列中
      }
@@ -51,7 +51,7 @@
  MYSQL* SqlConnPool::GetConn() {
      MYSQL *sql = nullptr; 
      if(connQue_.empty()){   // 如果队列为空，没有连接的数据库
-         LOG_WARN("SqlConnPool busy!");
+         LOG_WARN(MODULE_SQL, "SqlConnPool busy!");
          return nullptr;
      }
      sem_wait(&semId_);  // 等待空闲的数据库连接

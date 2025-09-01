@@ -20,6 +20,7 @@
  #include <arpa/inet.h>   // sockaddr_in
  #include <stdlib.h>      // atoi()
  #include <errno.h>      
+ #include <string>
  
  #include "../logsys/log.h"
  #include "../pool/sqlConnRAII.h"

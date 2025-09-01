@@ -64,7 +64,7 @@ bool HttpRequest::parse(Buffer& buff) {
         if(lineEnd == buff.BeginWrite()) { break; } // ?
         buff.RetrieveUntil(lineEnd + 2);  // ?
     }
-    LOG_DEBUG("[%s], [%s], [%s]", method_.c_str(), path_.c_str(), version_.c_str());
+    LOG_DEBUG(MODULE_HTTPREQ, "[%s], [%s], [%s]", method_.c_str(), path_.c_str(), version_.c_str());
     return true;
 }
 
@@ -94,7 +94,7 @@ bool HttpRequest::ParseRequestLine_(const string& line) {
         state_ = HEADERS;
         return true;
     }
-    LOG_ERROR("RequestLine Error");
+    LOG_ERROR(MODULE_HTTPREQ, "RequestLine Error");
     return false;
 }
 
@@ -113,7 +113,7 @@ void HttpRequest::ParseBody_(const string& line) {
     body_ = line;
     ParsePost_();
     state_ = FINISH;   // 虽然这里是finish，但只要buff中还有没读完的，parse还会继续循环读
-    LOG_DEBUG("Body:%s, len:%d", line.c_str(), line.size());
+    LOG_DEBUG(MODULE_HTTPREQ, "Body:%s, len:%d", line.c_str(), line.size());
 }
 
 /* 将十六进制字符转换成数字（用于在后续ParseFromUrlencoded_中转换为ASCII）*/
@@ -130,7 +130,7 @@ void HttpRequest::ParsePost_() {
         ParseFromUrlencoded_();    // 读取消息体中的键值对，并存储在post_中
         if(DEFAULT_HTML_TAG.count(path_)) {  // 是不是注册或者登录请求
             int tag = DEFAULT_HTML_TAG.find(path_)->second;
-            LOG_DEBUG("Tag:%d", tag);
+            LOG_DEBUG(MODULE_HTTPREQ, "Tag:%d", tag);
             if(tag == 0 || tag == 1) {
                 bool isLogin = (tag == 1); // true为登录，反之是注册
                 if(UserVerify(post_["username"], post_["password"], isLogin)) {
@@ -173,7 +173,7 @@ void HttpRequest::ParseFromUrlencoded_() {
             value = body_.substr(j, i - j);  // 遇到&,表示一个键值对遍历完毕
             j = i + 1;
             post_[key] = value;
-            LOG_DEBUG("%s = %s", key.c_str(), value.c_str());
+            LOG_DEBUG(MODULE_HTTPREQ, "%s = %s", key.c_str(), value.c_str());
             break;
         default:
             break;
@@ -189,7 +189,7 @@ void HttpRequest::ParseFromUrlencoded_() {
 /* 验证用户登录行为 */
 bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin) {
     if(name == "" || pwd == "") { return false; }
-    LOG_INFO("Verify name:%s pwd:%s", name.c_str(), pwd.c_str());
+    LOG_INFO(MODULE_HTTPREQ, "Verify name:%s pwd:%s", name.c_str(), pwd.c_str());
     MYSQL* sql;
     SqlConnRAII(&sql,  SqlConnPool::Instance());
     assert(sql);
@@ -203,7 +203,7 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
     if(!isLogin) { flag = true; }
     /* 查询用户及密码 */
     snprintf(order, 256, "SELECT username, password FROM user WHERE username='%s' LIMIT 1", name.c_str());
-    LOG_DEBUG("%s", order);
+    LOG_DEBUG(MODULE_HTTPREQ, "%s", order);
 
     if(mysql_query(sql, order)) { // sql查询语句
         mysql_free_result(res);
@@ -214,37 +214,37 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
     // fields = mysql_fetch_fields(res);  // 获取所有字段的元数据
 
     while(MYSQL_ROW row = mysql_fetch_row(res)) {   // 表示获取一行
-        LOG_DEBUG("MYSQL ROW: %s %s", row[0], row[1]);  // 应该是用户名，密码
+        LOG_DEBUG(MODULE_HTTPREQ, "MYSQL ROW: %s %s", row[0], row[1]);  // 应该是用户名，密码
         string password(row[1]);
         if(isLogin) {   // 如果是登录，要求密码正确
             if(pwd == password) { flag = true; }
             else {
                 flag = false;
-                LOG_DEBUG("pwd error!");
+                LOG_DEBUG(MODULE_HTTPREQ, MODULE_HTTPREQ, "pwd error!");
             }
         } 
         else {      // 如果是注册，要求用户名未被使用，而这里成功查询到该用户名，故返回用户名已使用
             flag = false; 
-            LOG_DEBUG("user used!");
+            LOG_DEBUG(MODULE_HTTPREQ, "user used!");
         }
     }
     mysql_free_result(res);
 
     /* 注册行为 且 用户名未被使用*/
     if(!isLogin && flag == true) {
-        LOG_DEBUG("regirster!");
+        LOG_DEBUG(MODULE_HTTPREQ, "regirster!");
         bzero(order, 256);
         // 往数据库添加数据
         snprintf(order, 256,"INSERT INTO user(username, password) VALUES('%s','%s')", name.c_str(), pwd.c_str());
-        LOG_DEBUG( "%s", order);
+        LOG_DEBUG(MODULE_HTTPREQ,  "%s", order);
         if(mysql_query(sql, order)) {   // 查询是否添加成功
-            LOG_DEBUG( "Insert error!");
+            LOG_DEBUG(MODULE_HTTPREQ,  "Insert error!");
             flag = false; 
         }
         flag = true;
     }
     SqlConnPool::Instance()->FreeConn(sql);
-    LOG_DEBUG( "UserVerify success!!");
+    LOG_DEBUG(MODULE_HTTPREQ,  "UserVerify success!!");
     return flag;
 }
 
