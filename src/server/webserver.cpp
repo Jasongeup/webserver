@@ -9,13 +9,17 @@
 ************************************************/
 
 #include "webserver.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               int sqlPort, const char* sqlUser, const char* sqlPwd,
               const char* dbName, int connPoolNum, int threadNum,
-              bool openLog, int logLevel, int logQueSize):
+              bool openLog, int logLevel, int logQueSize, 
+              bool useSSL, const char* certPath, const char* keyPath):
               port_(port), openLinger_(OptLinger), timeoutMS_(timeoutMS), isClose_(false),
-              timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller())
+              timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller()),
+              useSSL_(useSSL), certPath_(certPath), keyPath_(keyPath), sslCtx_(nullptr)
 {
     srcDir_ = getcwd(nullptr, 256);
     assert(srcDir_);  // 获取当前工作目录的绝对路径
@@ -24,21 +28,29 @@ WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
     HttpConn::srcDir = srcDir_;
     SqlConnPool::Instance()->Init("localhost", sqlPort, sqlUser, sqlPwd, dbName, connPoolNum); // 初始化数据库连接池
 
+    if (useSSL_) {
+        InitSSL_();
+    }
+    
     InitEventMode_(trigMode);
     if (!InitSocket_()) {isClose_ = true;}
 
     if (openLog) {   // 记录参数的日志信息
         Log::Instance()->init(logLevel, "./log", ".log", logQueSize);  // 创建日志实例，并初始化
-        if (isClose_) {LOG_ERROR("==========Server init error!==========");}
+        if (isClose_) {LOG_ERROR(MODULE_WEBSERVER, "==========Server init error!==========");}
         else {
-            LOG_INFO("==========Server init==========");  // 记录服务器初始化参数
-            LOG_INFO("Port:%d, OpenLinger:%s", port_, OptLinger?"true":"false");
-            LOG_INFO("Listen Mode:%s, OpenConn Mode:%s",
+            LOG_INFO(MODULE_WEBSERVER, "==========Server init==========");  // 记录服务器初始化参数
+            LOG_INFO(MODULE_WEBSERVER, "Port:%d, OpenLinger:%s", port_, OptLinger?"true":"false");
+            LOG_INFO(MODULE_WEBSERVER, "Listen Mode:%s, OpenConn Mode:%s",
                     (listenEvent_ & EPOLLET ? "ET" : "LT"),
                     (connEvent_ & EPOLLET ? "ET" : "LT"));  // 记录事件触发模式
-            LOG_INFO("LogSys level:%d", logLevel);
-            LOG_INFO("srcDir:%s", HttpConn::srcDir);
-            LOG_INFO("SqlConnPool num: %d, ThreadPool num: %d", connPoolNum, threadNum);
+
+            LOG_INFO(MODULE_WEBSERVER, "LogSys level:%d", logLevel);
+            LOG_INFO(MODULE_WEBSERVER, "srcDir:%s", HttpConn::srcDir);
+            LOG_INFO(MODULE_WEBSERVER, "SqlConnPool num: %d, ThreadPool num: %d", connPoolNum, threadNum);
+            if (useSSL_) {
+                LOG_INFO(MODULE_WEBSERVER, "SSL enabled, Cert: %s, Key: %s", certPath_, keyPath_);
+            }
         }
     }
 }
@@ -48,6 +60,9 @@ WebServer::~WebServer() {
     isClose_ = true;
     free(srcDir_);
     SqlConnPool::Instance()->ClosePool();
+    if (useSSL_) {
+        CleanupSSL_();
+    }
 }
 
 void WebServer::InitEventMode_(int trigMode) {
@@ -77,7 +92,7 @@ void WebServer::InitEventMode_(int trigMode) {
 
 void WebServer::Start() {
     int timeMS = -1;  /* epoll wait timeout == -1 无事件将阻塞 */
-    if (!isClose_) {LOG_INFO("========== Server start ==========");}
+    if (!isClose_) {LOG_INFO(MODULE_WEBSERVER, "========== Server start ==========");}
     while (!isClose_) {
         if (timeoutMS_ > 0) {
             timeMS = timer_->GetNextTick(); // 每次都要检查是否超时
@@ -102,7 +117,7 @@ void WebServer::Start() {
                 assert(users_.count(fd) > 0);
                 DealWrite_(&users_[fd]);
             } else {
-                LOG_ERROR("Unexpected event");
+                LOG_ERROR(MODULE_WEBSERVER, "Unexpected event");
             }
         }
     }
@@ -113,7 +128,7 @@ void WebServer::SendError_(int fd, const char* info) {
     assert(fd > 0);
     int ret = send(fd, info, strlen(info), 0);
     if (ret < 0) {
-        LOG_WARN("Send error to client[%d] error!", fd);
+        LOG_WARN(MODULE_WEBSERVER, "Send error to client[%d] error!", fd);
     }
     close(fd);
 }
@@ -121,21 +136,37 @@ void WebServer::SendError_(int fd, const char* info) {
 /* 关闭客户连接，删除epoll事件，关闭连接*/
 void WebServer::CloseConn_(HttpConn* client) {  
     assert(client);
-    LOG_INFO("Client[%d] quit!", client->GetFd());
+    LOG_INFO(MODULE_WEBSERVER, "Client[%d] quit!", client->GetFd());
     epoller_->DelFd(client->GetFd());
     client->Close();
 }
 
 /* 新连接到来，分配逻辑处理对象，注册读就绪事件 */
 void WebServer::AddClient_(int fd, sockaddr_in addr) {
+    if (useSSL_ && !sslCtx_) {
+        LOG_ERROR(MODULE_WEBSERVER, "SSL context not initialized");
+        return;
+    }
+    
     assert(fd > 0);
-    users_[fd].init(fd, addr);  // 给新连接socket分配处理逻辑对象
+
+    SSL* ssl = nullptr;
+    if (useSSL_) {
+        ssl = SSL_new(sslCtx_);
+        SSL_set_fd(ssl, fd);
+        if (SSL_accept(ssl) <= 0) {
+            SSL_free(ssl);
+            return;
+        }
+    }
+    
+    users_[fd].init(fd, addr, ssl);  // 给新连接socket分配处理逻辑对象
     if (timeoutMS_ > 0) {  // 给该连接分配定时器
         timer_->add(fd, timeoutMS_, std::bind(&WebServer::CloseConn_, this, &users_[fd]));
     }
     epoller_->AddFd(fd, EPOLLIN | connEvent_);   // 往epoll表中注册socket就绪事件
     SetFdNonblock(fd);
-    LOG_INFO("Client[%d] in!", users_[fd].GetFd());
+    LOG_INFO(MODULE_WEBSERVER, "Client[%d] in!", users_[fd].GetFd());
 }
 
 /* 接受客户连接请求 */
@@ -147,7 +178,7 @@ void WebServer::DealListen_() {
         if (fd < 0) return;  // 当所有客户连接请求都被处理，此时会返回，也退出了while循环
         else if (HttpConn::userCount >= MAX_FD) {
             SendError_(fd, "Server busy!");
-            LOG_WARN("Clients is full!");
+            LOG_WARN(MODULE_WEBSERVER, "Clients is full!");
             return;
         }
         AddClient_(fd, addr);
@@ -224,7 +255,7 @@ bool WebServer::InitSocket_() {
     int ret;
     struct sockaddr_in addr;
     if (port_ > 65535 || port_ < 1024) {  // port_是本地服务器的监听端口
-        LOG_ERROR("Port:%d error", port_);
+        LOG_ERROR(MODULE_WEBSERVER, "Port:%d error", port_);
         return false;
     }
     addr.sin_family = AF_INET;
@@ -238,14 +269,14 @@ bool WebServer::InitSocket_() {
     }
     listenFd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (listenFd_ < 0) {
-        LOG_ERROR("Create socket error!", port_);
+        LOG_ERROR(MODULE_WEBSERVER, "Create socket error!", port_);
         return false;
     }
 
     ret = setsockopt(listenFd_, SOL_SOCKET, SO_LINGER, &optLinger, sizeof(optLinger));
     if (ret < 0) {
         close(listenFd_);
-        LOG_ERROR("Init linger error!", port_);
+        LOG_ERROR(MODULE_WEBSERVER, "Init linger error!", port_);
         return false;
     }
 
@@ -254,36 +285,77 @@ bool WebServer::InitSocket_() {
     /* 只有最后一个套接字会正常接收数据 */
     ret = setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, (const void*)&optval, sizeof(int));
     if (ret == -1) {
-        LOG_ERROR("set socket setsockopt error");
+        LOG_ERROR(MODULE_WEBSERVER, "set socket setsockopt error");
         close(listenFd_);
         return false;
     }
 
     ret = bind(listenFd_, (struct sockaddr*)&addr, sizeof(addr));
     if (ret < 0) {
-        LOG_ERROR("Bind Port:%d error!", port_);
+        LOG_ERROR(MODULE_WEBSERVER, "Bind Port:%d error!", port_);
         close(listenFd_);
         return false;
     }
 
     ret = listen(listenFd_, 6);
     if (ret < 0) {
-        LOG_ERROR("Listen port:%d error!", port_);
+        LOG_ERROR(MODULE_WEBSERVER, "Listen port:%d error!", port_);
         close(listenFd_);
         return false;
     }
     ret = epoller_->AddFd(listenFd_, listenEvent_ | EPOLLIN);
     if (ret == 0) {
-        LOG_ERROR("Add listen error!");
+        LOG_ERROR(MODULE_WEBSERVER, "Add listen error!");
         close(listenFd_);
         return false;
     }
     SetFdNonblock(listenFd_);
-    LOG_INFO("Server port:%d", port_);
+    LOG_INFO(MODULE_WEBSERVER, "Server port:%d", port_);
     return true;
 }
 
 int WebServer::SetFdNonblock(int fd) {
     assert(fd > 0);
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFD, 0) | O_NONBLOCK);
+}
+
+/* 初始化SSL上下文 */
+void WebServer::InitSSL_() {
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    sslCtx_ = SSL_CTX_new(TLS_server_method());
+    if (!sslCtx_) {
+        LOG_ERROR(MODULE_WEBSERVER, "Create SSL context failed");
+        isClose_ = true;
+        return;
+    }
+    
+    if (SSL_CTX_use_certificate_file(sslCtx_, certPath_, SSL_FILETYPE_PEM) <= 0) {
+        LOG_ERROR(MODULE_WEBSERVER, "Load certificate failed");
+        ERR_print_errors_fp(stderr);
+        isClose_ = true;
+        return;
+    }
+    
+    if (SSL_CTX_use_PrivateKey_file(sslCtx_, keyPath_, SSL_FILETYPE_PEM) <= 0) {
+        LOG_ERROR(MODULE_WEBSERVER, "Load private key failed");
+        ERR_print_errors_fp(stderr);
+        isClose_ = true;
+        return;
+    }
+    
+    if (!SSL_CTX_check_private_key(sslCtx_)) {
+        LOG_ERROR(MODULE_WEBSERVER, "Private key does not match certificate");
+        isClose_ = true;
+    }
+}
+
+/* 清理SSL资源 */
+void WebServer::CleanupSSL_() {
+    if (sslCtx_) {
+        SSL_CTX_free(sslCtx_);
+        sslCtx_ = nullptr;
+    }
+    EVP_cleanup();
 }

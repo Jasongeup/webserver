@@ -23,6 +23,9 @@
  #include <vector>
  #include <atomic>
  #include <assert.h>
+ #include <openssl/ssl.h>  // 添加SSL支持
+
+ #include <algorithm>
  class Buffer {
  public:
      Buffer(int initBuffSize = 1024);
@@ -52,6 +55,10 @@
  
      ssize_t ReadFd(int fd, int* Errno);
      ssize_t WriteFd(int fd, int* Errno);
+     
+     // 添加SSL读写方法
+     ssize_t ReadFdSSL(SSL* ssl, int* saveErrno);
+     ssize_t WriteFdSSL(SSL* ssl, int* saveErrno);
  
  private:
      char* BeginPtr_();

@@ -43,7 +43,8 @@ public:
     WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               int sqlPort, const char* sqlUser, const char* sqlPwd,
               const char* dbName, int connPoolNum, int threadNum,
-              bool openLog, int logLevel, int logQueSize);
+              bool openLog, int logLevel, int logQueSize,
+              bool useSSL, const char* certPath, const char* keyPath);
     
     ~WebServer();
     void Start();
@@ -65,6 +66,9 @@ private:
     void OnWrite_(HttpConn* client);
     void OnProcess(HttpConn* client);
 
+    void InitSSL_();
+    void CleanupSSL_();
+
     static const int MAX_FD = 65536;
 
     static int SetFdNonblock(int fd);
@@ -83,6 +87,11 @@ private:
     std::unique_ptr<ThreadPool> threadpool_;   // 线程池
     std::unique_ptr<Epoller> epoller_;    // epoll表
     std::unordered_map<int, HttpConn> users_;    // key是连接socket，value是逻辑处理单元
+    
+    bool useSSL_;    // 是否启用SSL
+    const char* certPath_;
+    const char* keyPath_;
+    SSL_CTX* sslCtx_;
 };
 
 
