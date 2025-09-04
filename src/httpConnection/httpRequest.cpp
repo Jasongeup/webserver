@@ -12,11 +12,10 @@ using namespace std;
 
 /* 默认html文件 */
 const unordered_set<string> HttpRequest::DEFAULT_HTML{
-            "/index", "/register", "/login",
-             "/welcome", "/video", "/picture", };
+            "/index", "/login", "/register", "/chat"};
 
 const unordered_map<string, int> HttpRequest::DEFAULT_HTML_TAG {
-            {"/register.html", 0}, {"/login.html", 1},  };
+            {"/login", 1}, {"/register", 0}, {"/chat", 2}};
 
 void HttpRequest::Init() {
     method_ = path_ = version_ = body_ = "";

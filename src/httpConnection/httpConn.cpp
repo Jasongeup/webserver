@@ -2,13 +2,27 @@
  * FileName    : httpconn.cpp
  * Description : see httpconn.h
  * 
- * Feature     :
+ * Feature     : 
  * 
  * Author      : JasonGe
  * Created on  : 2025/03/27
 ************************************************/
 #include "httpConn.h"
+#include <cstdio>
 using namespace std;
+
+// 执行外部命令
+std::string exec(const char* cmd) {
+    char buffer[128];
+    std::string result = "";
+    FILE* pipe = popen(cmd, "r");
+    while (!feof(pipe)) {
+        if (fgets(buffer, 128, pipe) != NULL)
+            result += buffer;
+    }
+    pclose(pipe);
+    return result;
+}
 
 const char* HttpConn::srcDir;
 std::atomic<int> HttpConn::userCount;  // 用户数量定义为原子类型，使改变该值的操作原子化
@@ -110,7 +124,15 @@ bool HttpConn::process() {
     }
     else if(request_.parse(readBuff_)) {  // 调用成员类的方法读数据
         LOG_DEBUG("%s", request_.path().c_str());
-        response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 200); //初始化相应数据类成员
+        if(request_.path() == "/chat") {
+            // 调用Python API服务
+            std::string cmd = "python3 ../llm_api/chat_api.py \"" + request_.GetPost("message") + "\"";
+            std::string response = exec(cmd.c_str());
+            response_.SetContent(response);
+            response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 200);
+        } else {
+            response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 200); //初始化相应数据类成员
+        }
     } else {  // 如果读失败？
         response_.Init(srcDir, request_.path(), false, 400);
     }

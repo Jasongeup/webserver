@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Chat</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <div id="chat-messages"></div>
+        <div class="input-area">
+            <input type="text" id="message-input">
+            <button onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+    <script>
+        function appendMessage(content, isBot) {
+            const div = document.createElement('div');
+            div.className = isBot ? 'bot-message' : 'user-message';
+            div.textContent = content;
+            document.getElementById('chat-messages').appendChild(div);
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value;
+            appendMessage(message, false);
+            input.value = '';
+
+            try {
+                const response = await axios.post('/chat', { message });
+                appendMessage(response.data.reply, true);
+            } catch (error) {
+                appendMessage('对话服务暂时不可用', true);
+            }
+        }
+    </script>
+</body>
+</html>
