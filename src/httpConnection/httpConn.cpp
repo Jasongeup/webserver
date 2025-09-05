@@ -8,7 +8,31 @@
  * Created on  : 2025/03/27
 ************************************************/
 #include "httpConn.h"
+#include "../websocket_handler.h"
+#include <cstdio>
 using namespace std;
+
+// 执行外部命令
+std::string exec(const char* cmd) {
+    char buffer[128];
+    std::string result = "";
+    FILE* pipe = popen(cmd, "r");
+    if (pipe == nullptr) {
+        return "ERROR: Failed to open pipe";
+    }
+    
+    while (!feof(pipe)) {
+        if (fgets(buffer, 128, pipe) != NULL)
+            result += buffer;
+    }
+    
+    int status = pclose(pipe);
+    if (status != 0) {
+        result = "ERROR: Command failed with status " + std::to_string(status);
+    }
+    
+    return result;
+}
 
 const char* HttpConn::srcDir;
 std::atomic<int> HttpConn::userCount;  // 用户数量定义为原子类型，使改变该值的操作原子化
@@ -203,7 +227,97 @@ bool HttpConn::process() {
     }
     else if(request_.parse(readBuff_)) {  // 调用成员类的方法读数据
         LOG_DEBUG(MODULE_HTTP, "%s", request_.path().c_str());
-        response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 200); //初始化相应数据类成员
+        LOG_INFO(MODULE_HTTP, "Processing path: %s", request_.path().c_str());
+        LOG_INFO(MODULE_HTTP, "Request method: %s", request_.method().c_str());
+        LOG_INFO(MODULE_HTTP, "Request body: %s", request_.body().c_str());
+        
+        if(request_.path() == "/chat") {
+            LOG_INFO(MODULE_HTTP, "Chat endpoint accessed");
+            // 处理聊天请求
+            std::string message = request_.GetPost("message");
+            LOG_INFO(MODULE_HTTP, "GetPost message: '%s'", message.c_str());
+            
+            if(message.empty()) {
+                // 尝试从JSON中解析
+                std::string body = request_.body();
+                LOG_INFO(MODULE_HTTP, "Request body: '%s'", body.c_str());
+                // 使用更简单的JSON解析
+                size_t start = body.find("message");
+                LOG_INFO(MODULE_HTTP, "Looking for 'message' in body, start position: %zu", start);
+                if (start != std::string::npos) {
+                    // 找到 "message" 后，寻找冒号和引号
+                    size_t colon = body.find(':', start);
+                    if (colon != std::string::npos) {
+                        size_t quote1 = body.find('"', colon);
+                        if (quote1 != std::string::npos) {
+                            size_t quote2 = body.find('"', quote1 + 1);
+                            if (quote2 != std::string::npos) {
+                                message = body.substr(quote1 + 1, quote2 - quote1 - 1);
+                                LOG_INFO(MODULE_HTTP, "Extracted message: '%s'", message.c_str());
+                            }
+                        }
+                    }
+                } else {
+                    LOG_INFO(MODULE_HTTP, "Pattern 'message' not found in body");
+                }
+            }
+            
+            if(message.empty()) {
+                LOG_INFO(MODULE_HTTP, "No message provided, returning error");
+                response_.SetContent("{\"error\": \"No message provided\"}", "application/json");
+                response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 400);
+            } else {
+                LOG_INFO(MODULE_HTTP, "Processing message: '%s'", message.c_str());
+                
+                // 调用真正的LLM API
+                LOG_INFO(MODULE_HTTP, "Calling LLM API via HTTP");
+                
+                // 构建HTTP请求到LLM API，设置较长的超时时间以支持真正的LLM推理
+                std::string curl_cmd = "curl -s -X POST http://localhost:8000/chat "
+                                     "-H \"Content-Type: application/json\" "
+                                     "-d '{\"message\": \"" + message + "\"}' "
+                                     "--max-time 30 --connect-timeout 5";
+                
+                LOG_INFO(MODULE_HTTP, "Executing curl command: %s", curl_cmd.c_str());
+                std::string response = exec(curl_cmd.c_str());
+                LOG_INFO(MODULE_HTTP, "LLM response: '%s'", response.c_str());
+                
+                std::string final_response;
+                // 检查响应是否有效
+                if(response.empty() || response.find("ERROR") != std::string::npos || response.find("error") != std::string::npos) {
+                    LOG_INFO(MODULE_HTTP, "LLM service error, using fallback response");
+                    // 如果LLM API失败，使用智能回退响应
+                    final_response = "{\"response\": \"抱歉，AI服务暂时不可用。不过我可以告诉你，你刚才问的是：'" + message + "'。请稍后再试或联系管理员。\"}";
+                } else {
+                    LOG_INFO(MODULE_HTTP, "LLM service success, processing response");
+                    // 确保响应是有效的JSON格式
+                    if(response.find("{") == std::string::npos) {
+                        final_response = "{\"response\": \"" + response + "\"}";
+                    } else {
+                        final_response = response;
+                    }
+                }
+                
+                LOG_INFO(MODULE_HTTP, "Final response: %s", final_response.c_str());
+                
+                // 直接构建HTTP响应，不通过文件系统
+                std::string http_response = "HTTP/1.1 200 OK\r\n"
+                                          "Content-Type: application/json\r\n"
+                                          "Content-Length: " + std::to_string(final_response.length()) + "\r\n"
+                                          "Connection: " + (request_.IsKeepAlive() ? "keep-alive" : "close") + "\r\n\r\n"
+                                          + final_response;
+                
+                writeBuff_.Append(http_response);
+                iov_[0].iov_base = const_cast<char*>(writeBuff_.Peek());
+                iov_[0].iov_len = writeBuff_.ReadableBytes();
+                iovCnt_ = 1;
+                LOG_INFO(MODULE_HTTP, "Response set successfully, length: %zu", writeBuff_.ReadableBytes());
+                LOG_INFO(MODULE_HTTP, "Final response: %s", final_response.c_str());
+                return true; // 直接返回，不执行后续的MakeResponse
+            }
+        } else {
+            response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 200); //初始化相应数据类成员
+        }
     } else {  // 如果读失败？
         response_.Init(srcDir, request_.path(), false, 400);
     }

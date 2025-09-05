@@ -59,6 +59,7 @@ public:
     std::string version() const;
     std::string GetPost(const std::string& key) const;
     std::string GetPost(const char* key) const;
+    std::string body() const;
 
     bool IsKeepAlive() const;
 

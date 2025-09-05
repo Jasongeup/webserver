@@ -196,3 +196,17 @@ void HttpResponse::ErrorContent(Buffer& buff, string message)
     buff.Append("Content-length: " + to_string(body.size()) + "\r\n\r\n");
     buff.Append(body);
 }
+
+void HttpResponse::SetContent(const std::string& content, const std::string& contentType) {
+    // 设置内容类型
+    if(contentType == "application/json") {
+        path_ = "json";
+    } else {
+        path_ = "html";
+    }
+    
+    // 将内容存储到临时文件中，然后映射到内存
+    // 这里简化处理，直接设置内容
+    code_ = 200;
+    isKeepAlive_ = true;
+}

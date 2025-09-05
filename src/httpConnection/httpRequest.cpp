@@ -279,3 +279,7 @@ std::string HttpRequest::GetPost(const char* key) const {
     }
     return "";
 }
+
+std::string HttpRequest::body() const {
+    return body_;
+}

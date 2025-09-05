@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 智能对话</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/chat.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <div class="chat-wrapper">
+        <div class="chat-header">
+            <h1>🤖 AI 智能助手</h1>
+            <div class="status-indicator" id="status-indicator">
+                <span class="status-dot"></span>
+                <span class="status-text">在线</span>
+            </div>
+        </div>
+        
+        <div class="chat-container">
+            <div id="chat-messages" class="chat-messages">
+                <div class="welcome-message">
+                    <div class="bot-message">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <div class="message-text">你好！我是AI智能助手，有什么可以帮助你的吗？</div>
+                            <div class="message-time" id="welcome-time"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <div class="input-container">
+                    <textarea id="message-input" placeholder="输入你的消息..." rows="1"></textarea>
+                    <button id="send-button" onclick="sendMessage()">
+                        <span class="send-icon">📤</span>
+                    </button>
+                </div>
+                <div class="input-hint">按 Enter 发送，Shift + Enter 换行</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isTyping = false;
+        let messageCount = 0;
+
+        // 初始化时间显示
+        document.getElementById('welcome-time').textContent = getCurrentTime();
+
+        // 自动调整输入框高度
+        const messageInput = document.getElementById('message-input');
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // 监听键盘事件
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 获取当前时间
+        function getCurrentTime() {
+            const now = new Date();
+            return now.toLocaleTimeString('zh-CN', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+        }
+
+        // 添加消息到聊天区域
+        function appendMessage(content, isBot, isError = false) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            
+            if (isBot) {
+                messageDiv.className = 'bot-message';
+                messageDiv.innerHTML = `
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-text">${content}</div>
+                        <div class="message-time">${getCurrentTime()}</div>
+                    </div>
+                `;
+            } else {
+                messageDiv.className = 'user-message';
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        <div class="message-text">${content}</div>
+                        <div class="message-time">${getCurrentTime()}</div>
+                    </div>
+                    <div class="message-avatar">👤</div>
+                `;
+            }
+
+            if (isError) {
+                messageDiv.classList.add('error-message');
+            }
+
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            messageCount++;
+        }
+
+        // 显示打字状态
+        function showTyping() {
+            if (isTyping) return;
+            isTyping = true;
+            
+            const messagesContainer = document.getElementById('chat-messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'bot-message typing-message';
+            typingDiv.id = 'typing-indicator';
+            typingDiv.innerHTML = `
+                <div class="message-avatar">🤖</div>
+                <div class="message-content">
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(typingDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // 隐藏打字状态
+        function hideTyping() {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+            isTyping = false;
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+
+            // 添加用户消息
+            appendMessage(message, false);
+            input.value = '';
+            input.style.height = 'auto';
+
+            // 显示AI正在思考
+            showTyping();
+
+            // 禁用发送按钮
+            const sendButton = document.getElementById('send-button');
+            sendButton.disabled = true;
+            sendButton.innerHTML = '<span class="send-icon">⏳</span>';
+
+            try {
+                const response = await axios.post('/chat', { message: message });
+                hideTyping();
+                
+                if (response.data && response.data.response) {
+                    appendMessage(response.data.response, true);
+                } else {
+                    appendMessage('抱歉，我无法理解你的消息。', true, true);
+                }
+            } catch (error) {
+                hideTyping();
+                console.error('Chat error:', error);
+                
+                let errorMessage = '对话服务暂时不可用，请稍后再试。';
+                if (error.response && error.response.status === 500) {
+                    errorMessage = '服务器内部错误，请稍后再试。';
+                } else if (error.response && error.response.status === 400) {
+                    errorMessage = '请求格式错误，请检查输入。';
+                }
+                
+                appendMessage(errorMessage, true, true);
+            } finally {
+                // 重新启用发送按钮
+                sendButton.disabled = false;
+                sendButton.innerHTML = '<span class="send-icon">📤</span>';
+            }
+        }
+
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            messageInput.focus();
+        });
+    </script>
+</body>
+</html>

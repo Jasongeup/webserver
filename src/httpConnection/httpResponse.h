@@ -35,6 +35,7 @@ public:
     char* File();
     size_t FileLen() const;
     void ErrorContent(Buffer& buff, std::string message);
+    void SetContent(const std::string& content, const std::string& contentType = "text/html");
     int Code() const { return code_; }
 
 private:
