@@ -13,7 +13,7 @@ using namespace std;
 /* 默认html文件 */
 const unordered_set<string> HttpRequest::DEFAULT_HTML{
             "/index", "/register", "/login",
-             "/welcome", "/video", "/picture", };
+             "/welcome", "/video", "/picture"};
 
 const unordered_map<string, int> HttpRequest::DEFAULT_HTML_TAG {
             {"/register.html", 0}, {"/login.html", 1},  };

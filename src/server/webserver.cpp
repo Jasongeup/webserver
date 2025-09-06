@@ -141,8 +141,21 @@ void WebServer::CloseConn_(HttpConn* client) {
     client->Close();
 }
 
-/* 新连接到来，分配逻辑处理对象，注册读就绪事件 */
+/**
+ * 处理新客户端连接
+ * 
+ * 当有新客户端连接时，执行以下操作：
+ * 1. 检查SSL配置和上下文
+ * 2. 如果是SSL模式，执行SSL握手
+ * 3. 初始化HTTP连接对象
+ * 4. 设置连接超时定时器
+ * 5. 注册到epoll事件循环
+ * 
+ * @param fd 客户端socket文件描述符
+ * @param addr 客户端地址信息
+ */
 void WebServer::AddClient_(int fd, sockaddr_in addr) {
+    // 如果启用了SSL但SSL上下文未初始化，则拒绝连接
     if (useSSL_ && !sslCtx_) {
         LOG_ERROR(MODULE_WEBSERVER, "SSL context not initialized");
         return;
@@ -152,20 +165,35 @@ void WebServer::AddClient_(int fd, sockaddr_in addr) {
 
     SSL* ssl = nullptr;
     if (useSSL_) {
+        // 为SSL连接创建新的SSL对象
         ssl = SSL_new(sslCtx_);
+        
+        // 将socket文件描述符与SSL对象关联
         SSL_set_fd(ssl, fd);
+        
+        // 执行SSL握手，建立加密连接
+        // SSL_accept()会与客户端协商加密算法和密钥
         if (SSL_accept(ssl) <= 0) {
+            // SSL握手失败，清理资源并拒绝连接
             SSL_free(ssl);
             return;
         }
     }
     
-    users_[fd].init(fd, addr, ssl);  // 给新连接socket分配处理逻辑对象
-    if (timeoutMS_ > 0) {  // 给该连接分配定时器
+    // 初始化HTTP连接对象，传入SSL对象（如果启用SSL）
+    users_[fd].init(fd, addr, ssl);
+    
+    // 如果设置了连接超时，添加定时器
+    if (timeoutMS_ > 0) {
         timer_->add(fd, timeoutMS_, std::bind(&WebServer::CloseConn_, this, &users_[fd]));
     }
-    epoller_->AddFd(fd, EPOLLIN | connEvent_);   // 往epoll表中注册socket就绪事件
+    
+    // 将socket注册到epoll事件循环，监听读事件
+    epoller_->AddFd(fd, EPOLLIN | connEvent_);
+    
+    // 设置socket为非阻塞模式
     SetFdNonblock(fd);
+    
     LOG_INFO(MODULE_WEBSERVER, "Client[%d] in!", users_[fd].GetFd());
 }
 
@@ -319,11 +347,33 @@ int WebServer::SetFdNonblock(int fd) {
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFD, 0) | O_NONBLOCK);
 }
 
-/* 初始化SSL上下文 */
+/**
+ * 初始化SSL上下文
+ * 
+ * 设置SSL/TLS服务器环境，加载证书和私钥文件。
+ * 这是启用HTTPS功能的关键步骤。
+ * 
+ * 初始化步骤：
+ * 1. 初始化OpenSSL库
+ * 2. 加载所有加密算法
+ * 3. 加载错误字符串
+ * 4. 创建SSL上下文
+ * 5. 加载服务器证书
+ * 6. 加载私钥文件
+ * 7. 验证证书和私钥的匹配性
+ */
 void WebServer::InitSSL_() {
+    // 初始化OpenSSL库，必须在其他SSL函数调用之前执行
     SSL_library_init();
+    
+    // 加载所有可用的加密算法（包括对称加密、非对称加密、哈希算法等）
     OpenSSL_add_all_algorithms();
+    
+    // 加载SSL错误字符串，便于调试和错误报告
     SSL_load_error_strings();
+    
+    // 创建SSL上下文，使用TLS服务器方法
+    // TLS_server_method()会自动选择服务器支持的最高TLS版本
     sslCtx_ = SSL_CTX_new(TLS_server_method());
     if (!sslCtx_) {
         LOG_ERROR(MODULE_WEBSERVER, "Create SSL context failed");
@@ -331,31 +381,44 @@ void WebServer::InitSSL_() {
         return;
     }
     
+    // 加载服务器证书文件（PEM格式）
     if (SSL_CTX_use_certificate_file(sslCtx_, certPath_, SSL_FILETYPE_PEM) <= 0) {
         LOG_ERROR(MODULE_WEBSERVER, "Load certificate failed");
-        ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);  // 打印详细的SSL错误信息
         isClose_ = true;
         return;
     }
     
+    // 加载私钥文件（PEM格式）
     if (SSL_CTX_use_PrivateKey_file(sslCtx_, keyPath_, SSL_FILETYPE_PEM) <= 0) {
         LOG_ERROR(MODULE_WEBSERVER, "Load private key failed");
-        ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);  // 打印详细的SSL错误信息
         isClose_ = true;
         return;
     }
     
+    // 验证私钥是否与证书匹配
     if (!SSL_CTX_check_private_key(sslCtx_)) {
         LOG_ERROR(MODULE_WEBSERVER, "Private key does not match certificate");
         isClose_ = true;
     }
 }
 
-/* 清理SSL资源 */
+/**
+ * 清理SSL资源
+ * 
+ * 在服务器关闭时清理SSL相关的资源，防止内存泄漏。
+ * 包括释放SSL上下文和清理OpenSSL内部状态。
+ */
 void WebServer::CleanupSSL_() {
     if (sslCtx_) {
+        // 释放SSL上下文，这会自动释放所有相关的SSL连接
         SSL_CTX_free(sslCtx_);
         sslCtx_ = nullptr;
     }
+    
+    // 清理OpenSSL的内部状态和内存
+    // 注意：在较新版本的OpenSSL中，EVP_cleanup()已被弃用
+    // 但为了兼容性，这里仍然保留
     EVP_cleanup();
 }

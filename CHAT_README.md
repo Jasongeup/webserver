@@ -6,7 +6,7 @@
 
 - 🤖 **智能对话**: 与本地大模型进行自然语言对话
 - 🌐 **Web界面**: 现代化的聊天界面，支持实时交互
-- ⚡ **实时通信**: 支持WebSocket实时通信
+- ⚡ **实时通信**: 支持HTTP实时通信
 - 📱 **响应式设计**: 适配桌面和移动设备
 - 🔄 **自动重连**: 连接断开时自动重连
 - 🎨 **美观界面**: 现代化的UI设计，支持深色模式
@@ -45,22 +45,15 @@ python3 chat_api.py --server --port 8000
 
 ### 3. 访问聊天页面
 
-- **普通聊天页面**: http://localhost:1316/chat.html
-- **WebSocket聊天页面**: http://localhost:1316/chat_ws.html
+- **聊天页面**: http://localhost:1316/chat.html
 
 ## 使用说明
 
-### 普通聊天模式
+### 聊天模式
 1. 打开 http://localhost:1316/chat.html
 2. 在输入框中输入消息
 3. 按Enter发送或点击发送按钮
 4. AI会通过HTTP API返回回复
-
-### WebSocket实时聊天模式
-1. 打开 http://localhost:1316/chat_ws.html
-2. 等待连接建立（状态显示为"在线"）
-3. 输入消息并发送
-4. AI会通过WebSocket实时返回回复
 
 ## API接口
 
@@ -81,23 +74,6 @@ Content-Type: application/json
 }
 ```
 
-### WebSocket接口
-```
-连接: ws://localhost:1316/ws
-
-发送消息:
-{
-    "type": "chat_message",
-    "message": "你好",
-    "timestamp": 1234567890
-}
-
-接收消息:
-{
-    "type": "chat_response",
-    "message": "你好！有什么可以帮助你的吗？"
-}
-```
 
 ## 配置选项
 
@@ -135,7 +111,7 @@ python3 chat_api.py --server --model "facebook/blenderbot-400M-distill"
 - Web服务器状态检查
 - LLM API服务状态检查
 - HTTP聊天接口测试
-- WebSocket连接测试
+- HTTP连接测试
 - 聊天页面访问测试
 
 ## 故障排除
@@ -147,10 +123,10 @@ python3 chat_api.py --server --model "facebook/blenderbot-400M-distill"
    - 检查磁盘空间，模型文件较大
    - 检查Python环境和依赖包
 
-2. **WebSocket连接失败**
+2. **HTTP连接失败**
    - 检查防火墙设置
    - 确保端口1316未被占用
-   - 检查浏览器是否支持WebSocket
+   - 检查网络连接
 
 3. **聊天无响应**
    - 检查LLM API服务是否运行
@@ -184,12 +160,12 @@ python3 chat_api.py --server 2>&1 | tee chat_api.log
 
 ### 添加新功能
 1. 修改 `src/httpConnection/httpConn.cpp` 添加新的HTTP路由
-2. 修改 `src/websocket_handler.cpp` 添加WebSocket消息处理
+2. 修改 `src/httpConnection/httpConn.cpp` 添加HTTP消息处理
 3. 更新前端页面添加新功能
 
 ### 自定义UI
 - 修改 `resources/css/chat.css` 调整样式
-- 修改 `resources/chat.html` 或 `resources/chat_ws.html` 调整布局
+- 修改 `resources/chat.html` 调整布局
 
 ## 许可证
 

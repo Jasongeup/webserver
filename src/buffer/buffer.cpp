@@ -149,35 +149,46 @@ const char* Buffer::BeginPtr_() const {
     return &*buffer_.begin();
 }
 
-/* 添加SSL读取方法 */
+/**
+ * SSL读取方法
+ * 
+ * 从SSL连接中读取数据到缓冲区，处理SSL特有的错误情况。
+ * 支持分块读取，确保数据完整性。
+ * 
+ * @param ssl SSL连接对象
+ * @param saveErrno 用于保存错误码的指针
+ * @return 读取的字节数，-1表示需要重试，-2表示致命错误
+ */
 ssize_t Buffer::ReadFdSSL(SSL* ssl, int* saveErrno) {
-    char buff[65535];
-    const size_t writable = WritableBytes();
+    char buff[65535];                    // 临时缓冲区，用于读取额外数据
+    const size_t writable = WritableBytes();  // 当前可写空间大小
     
-    // 先读取到主缓冲区
+    // 首先尝试读取到主缓冲区的可写空间
     ssize_t len = SSL_read(ssl, BeginPtr_() + writePos_, writable);
     if (len > 0) {
-        writePos_ += len;
-        return len;
+        writePos_ += len;  // 更新写位置
+        return len;        // 成功读取
     }
     
-    // 如果主缓冲区已满或需要更多空间
+    // 处理SSL读取错误
     if (len <= 0) {
         int ssl_err = SSL_get_error(ssl, len);
         if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE) {
-            // 非致命错误，继续尝试读取
+            // 非致命错误：需要更多数据或需要写入数据
+            // 这通常发生在SSL握手过程中或需要重试时
             *saveErrno = EAGAIN;
             return -1;
         } else {
-            // 致命错误
+            // 致命错误：SSL连接出现问题
             *saveErrno = ssl_err;
             return -1;
         }
     }
     
-    // 如果还有额外数据，读取到临时缓冲区
+    // 如果主缓冲区已满，尝试读取额外数据到临时缓冲区
     ssize_t additional_len = SSL_read(ssl, buff, sizeof(buff));
     if (additional_len > 0) {
+        // 将额外数据追加到缓冲区（会自动扩容）
         Append(buff, additional_len);
         return len + additional_len;
     }
@@ -185,14 +196,27 @@ ssize_t Buffer::ReadFdSSL(SSL* ssl, int* saveErrno) {
     return len;
 }
 
-/* 添加SSL写入方法 */
+/**
+ * SSL写入方法
+ * 
+ * 将缓冲区中的数据写入SSL连接，处理SSL特有的错误情况。
+ * 
+ * @param ssl SSL连接对象
+ * @param saveErrno 用于保存错误码的指针
+ * @return 写入的字节数，-1表示需要重试，-2表示致命错误
+ */
 ssize_t Buffer::WriteFdSSL(SSL* ssl, int* saveErrno) {
-    size_t readSize = ReadableBytes();
+    size_t readSize = ReadableBytes();  // 获取可读数据大小
+    
+    // 尝试将缓冲区中的数据写入SSL连接
     ssize_t len = SSL_write(ssl, Peek(), readSize);
     if(len < 0) {
+        // 获取SSL错误码并保存
         *saveErrno = SSL_get_error(ssl, len);
         return len;
     } 
+    
+    // 更新读位置，标记已写入的数据
     readPos_ += len;
     return len;
 }

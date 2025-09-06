@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 智能对话</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/chat.css">
+    <!-- 引入样式文件 -->
+    <link rel="stylesheet" href="css/style.css">      <!-- 基础样式 -->
+    <link rel="stylesheet" href="css/chat.css">       <!-- 聊天界面专用样式 -->
+    <!-- 引入Axios库用于HTTP请求 -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
 <body>
@@ -44,28 +46,43 @@
     </div>
 
     <script>
-        let isTyping = false;
-        let messageCount = 0;
+        // 全局变量
+        let isTyping = false;    // 是否正在显示打字状态
+        let messageCount = 0;    // 消息计数器
 
-        // 初始化时间显示
-        document.getElementById('welcome-time').textContent = getCurrentTime();
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 设置欢迎消息的时间
+            document.getElementById('welcome-time').textContent = getCurrentTime();
+            
+            // 聚焦到输入框
+            messageInput.focus();
+        });
 
-        // 自动调整输入框高度
+        // 获取输入框元素
         const messageInput = document.getElementById('message-input');
+        
+        // 自动调整输入框高度
         messageInput.addEventListener('input', function() {
             this.style.height = 'auto';
+            // 限制最大高度为120px
             this.style.height = Math.min(this.scrollHeight, 120) + 'px';
         });
 
         // 监听键盘事件
         messageInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+                e.preventDefault();  // 阻止默认换行行为
+                sendMessage();       // 发送消息
             }
         });
 
-        // 获取当前时间
+        /**
+         * 获取当前时间
+         * 
+         * 返回格式化的当前时间字符串
+         * @return {string} 格式化的时间字符串 (HH:MM)
+         */
         function getCurrentTime() {
             const now = new Date();
             return now.toLocaleTimeString('zh-CN', { 
@@ -74,12 +91,21 @@
             });
         }
 
-        // 添加消息到聊天区域
+        /**
+         * 添加消息到聊天区域
+         * 
+         * 创建消息DOM元素并添加到聊天容器中
+         * 
+         * @param {string} content - 消息内容
+         * @param {boolean} isBot - 是否为AI消息
+         * @param {boolean} isError - 是否为错误消息
+         */
         function appendMessage(content, isBot, isError = false) {
             const messagesContainer = document.getElementById('chat-messages');
             const messageDiv = document.createElement('div');
             
             if (isBot) {
+                // AI消息样式
                 messageDiv.className = 'bot-message';
                 messageDiv.innerHTML = `
                     <div class="message-avatar">🤖</div>
@@ -89,6 +115,7 @@
                     </div>
                 `;
             } else {
+                // 用户消息样式
                 messageDiv.className = 'user-message';
                 messageDiv.innerHTML = `
                     <div class="message-content">
@@ -99,18 +126,24 @@
                 `;
             }
 
+            // 如果是错误消息，添加错误样式
             if (isError) {
                 messageDiv.classList.add('error-message');
             }
 
+            // 添加到聊天容器并滚动到底部
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
             messageCount++;
         }
 
-        // 显示打字状态
+        /**
+         * 显示AI打字状态
+         * 
+         * 在聊天区域显示AI正在思考的动画效果
+         */
         function showTyping() {
-            if (isTyping) return;
+            if (isTyping) return;  // 防止重复显示
             isTyping = true;
             
             const messagesContainer = document.getElementById('chat-messages');
@@ -128,11 +161,16 @@
                 </div>
             `;
             
+            // 添加到聊天容器并滚动到底部
             messagesContainer.appendChild(typingDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
-        // 隐藏打字状态
+        /**
+         * 隐藏AI打字状态
+         * 
+         * 移除打字动画效果
+         */
         function hideTyping() {
             const typingIndicator = document.getElementById('typing-indicator');
             if (typingIndicator) {
@@ -141,39 +179,51 @@
             isTyping = false;
         }
 
-        // 发送消息
+        /**
+         * 发送消息到AI服务器
+         * 
+         * 处理用户输入，发送到后端API，并显示AI回复
+         */
         async function sendMessage() {
             const input = document.getElementById('message-input');
             const message = input.value.trim();
             
+            // 检查消息是否为空
             if (!message) return;
 
-            // 添加用户消息
+            // 添加用户消息到聊天界面
             appendMessage(message, false);
+            
+            // 清空输入框并重置高度
             input.value = '';
             input.style.height = 'auto';
 
-            // 显示AI正在思考
+            // 显示AI正在思考的状态
             showTyping();
 
-            // 禁用发送按钮
+            // 禁用发送按钮，防止重复发送
             const sendButton = document.getElementById('send-button');
             sendButton.disabled = true;
             sendButton.innerHTML = '<span class="send-icon">⏳</span>';
 
             try {
+                // 发送POST请求到聊天API
                 const response = await axios.post('/chat', { message: message });
-                hideTyping();
+                hideTyping();  // 隐藏打字状态
                 
+                // 检查响应是否有效
                 if (response.data && response.data.response) {
+                    // 显示AI回复
                     appendMessage(response.data.response, true);
                 } else {
+                    // 响应格式错误
                     appendMessage('抱歉，我无法理解你的消息。', true, true);
                 }
             } catch (error) {
-                hideTyping();
+                hideTyping();  // 隐藏打字状态
                 console.error('Chat error:', error);
                 
+                // 根据错误类型显示不同的错误消息
                 let errorMessage = '对话服务暂时不可用，请稍后再试。';
                 if (error.response && error.response.status === 500) {
                     errorMessage = '服务器内部错误，请稍后再试。';
@@ -181,6 +231,7 @@
                     errorMessage = '请求格式错误，请检查输入。';
                 }
                 
+                // 显示错误消息
                 appendMessage(errorMessage, true, true);
             } finally {
                 // 重新启用发送按钮
@@ -189,10 +240,7 @@
             }
         }
 
-        // 页面加载完成后的初始化
-        document.addEventListener('DOMContentLoaded', function() {
-            messageInput.focus();
-        });
+        // 注意：页面初始化代码已移到文件开头，这里保留以防重复
     </script>
 </body>
 </html>

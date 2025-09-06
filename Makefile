@@ -10,8 +10,7 @@ SOURCES = $(wildcard $(SRCDIR)/logsys/*.cpp) \
           $(wildcard $(SRCDIR)/httpConnection/*.cpp) \
           $(wildcard $(SRCDIR)/server/*.cpp) \
           $(wildcard $(SRCDIR)/buffer/*.cpp) \
-          $(SRCDIR)/main.cpp \
-          $(SRCDIR)/websocket_handler.cpp
+          $(SRCDIR)/main.cpp
 
 OBJS = $(SOURCES:.cpp=.o)
 
