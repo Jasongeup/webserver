@@ -122,7 +122,7 @@ ssize_t Buffer::ReadFd(int fd, int* saveErrno) {
     }
     else {// 如果缓冲区填不下，则先更新写起始位置到缓冲区末尾，再用append插入剩下的数据（会扩容），由append更新新的写起始
         writePos_ = buffer_.size();
-        Append(buff, len - writable);
+        Append(buff, len - writable); // 函数开头的局部变量buff的作用是确保能读下所有数据，之后要把buff的数据再拷贝到读缓冲区的成员buffer_中
     }
     return len;
 }
@@ -149,51 +149,69 @@ const char* Buffer::BeginPtr_() const {
     return &*buffer_.begin();
 }
 
-/* 添加SSL读取方法 */
+/* 从SSL连接读取加密数据并解密到缓冲区
+ * @param ssl SSL会话对象，用于加密通信
+ * @param saveErrno 保存错误码的指针
+ * @return 读取的字节数，-1表示需要重试或错误
+ */
 ssize_t Buffer::ReadFdSSL(SSL* ssl, int* saveErrno) {
-    char buff[65535];
+    char buff[65535];  // 临时缓冲区，用于处理额外数据
     const size_t writable = WritableBytes();
     
-    // 先读取到主缓冲区
+    /* 先尝试读取到主缓冲区的可写空间
+     * SSL_read会自动处理数据解密，返回的是解密后的明文数据
+     */
     ssize_t len = SSL_read(ssl, BeginPtr_() + writePos_, writable);
     if (len > 0) {
-        writePos_ += len;
+        writePos_ += len;  // 更新写位置
         return len;
     }
     
-    // 如果主缓冲区已满或需要更多空间
+    /* 处理SSL读取错误
+     * SSL错误分为致命错误和非致命错误，需要区别处理
+     */
     if (len <= 0) {
         int ssl_err = SSL_get_error(ssl, len);
         if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE) {
-            // 非致命错误，继续尝试读取
+            // 非致命错误，表示需要等待更多数据或可写状态，可以重试
             *saveErrno = EAGAIN;
             return -1;
         } else {
-            // 致命错误
+            // 致命错误，SSL连接出现问题
             *saveErrno = ssl_err;
             return -1;
         }
     }
     
-    // 如果还有额外数据，读取到临时缓冲区
+    /* 如果主缓冲区空间不足，使用临时缓冲区读取额外数据
+     * 这种情况通常发生在缓冲区空间不够时
+     */
     ssize_t additional_len = SSL_read(ssl, buff, sizeof(buff));
     if (additional_len > 0) {
-        Append(buff, additional_len);
+        Append(buff, additional_len);  // 将额外数据追加到缓冲区
         return len + additional_len;
     }
     
     return len;
 }
 
-/* 添加SSL写入方法 */
+/* 将缓冲区数据加密并写入SSL连接
+ * @param ssl SSL会话对象，用于加密通信
+ * @param saveErrno 保存错误码的指针
+ * @return 写入的字节数，-1表示需要重试或错误
+ */
 ssize_t Buffer::WriteFdSSL(SSL* ssl, int* saveErrno) {
     size_t readSize = ReadableBytes();
+    /* 使用SSL_write发送数据，数据会自动加密
+     * 注意：SSL_write可能不会一次性发送所有数据，需要处理部分写入的情况
+     */
     ssize_t len = SSL_write(ssl, Peek(), readSize);
     if(len < 0) {
+        // SSL写入错误，获取具体错误类型
         *saveErrno = SSL_get_error(ssl, len);
         return len;
     } 
-    readPos_ += len;
+    readPos_ += len;  // 更新读位置，标记已发送的数据
     return len;
 }
 

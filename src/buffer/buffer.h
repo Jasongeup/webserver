@@ -23,7 +23,7 @@
  #include <vector>
  #include <atomic>
  #include <assert.h>
- #include <openssl/ssl.h>  // 添加SSL支持
+ #include <openssl/ssl.h>  // OpenSSL库头文件，提供SSL/TLS加密通信支持
 
  #include <algorithm>
  class Buffer {
@@ -53,12 +53,14 @@
      void Append(const void* data, size_t len);
      void Append(const Buffer& buff);
  
-     ssize_t ReadFd(int fd, int* Errno);
-     ssize_t WriteFd(int fd, int* Errno);
-     
-     // 添加SSL读写方法
-     ssize_t ReadFdSSL(SSL* ssl, int* saveErrno);
-     ssize_t WriteFdSSL(SSL* ssl, int* saveErrno);
+    ssize_t ReadFd(int fd, int* Errno);
+    ssize_t WriteFd(int fd, int* Errno);
+    
+    /* SSL/TLS加密通信读写方法
+     * 这些方法用于处理HTTPS连接中的数据读写，数据会自动进行加密/解密
+     */
+    ssize_t ReadFdSSL(SSL* ssl, int* saveErrno);   // 从SSL连接读取加密数据并解密到缓冲区
+    ssize_t WriteFdSSL(SSL* ssl, int* saveErrno);  // 将缓冲区数据加密并写入SSL连接
  
  private:
      char* BeginPtr_();

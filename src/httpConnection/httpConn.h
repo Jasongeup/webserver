@@ -20,9 +20,9 @@
  #include <arpa/inet.h>   // sockaddr_in
  #include <stdlib.h>      // atoi()
  #include <errno.h>      
- #include <openssl/ssl.h>  // 添加SSL支持
- #include <algorithm>
- #include <openssl/err.h>
+#include <openssl/ssl.h>  // OpenSSL库头文件，提供SSL/TLS加密通信支持
+#include <algorithm>
+#include <openssl/err.h>  // OpenSSL错误处理头文件
   
  #include "../logsys/log.h"
  #include "../pool/sqlConnRAII.h"
@@ -36,7 +36,12 @@
  
      ~HttpConn();
  
-     void init(int sockFd, const sockaddr_in& addr, SSL* ssl);
+     /* 初始化HTTP连接，支持SSL/TLS加密
+     * @param sockFd socket文件描述符
+     * @param addr 客户端地址信息
+     * @param ssl SSL会话对象，用于加密通信，nullptr表示普通HTTP连接
+     */
+    void init(int sockFd, const sockaddr_in& addr, SSL* ssl);
  
      ssize_t read(int* saveErrno);
  
@@ -68,20 +73,20 @@
      
  private:
     
-     int fd_;
-     struct  sockaddr_in addr_;
+    int fd_;
+    struct  sockaddr_in addr_;
  
-     bool isClose_;
-     SSL* ssl_;
+    bool isClose_;
+    SSL* ssl_;      // SSL会话对象指针，用于HTTPS加密通信，nullptr表示普通HTTP连接
      
-     int iovCnt_;  // 有数据的块的数量
-     struct iovec iov_[2];  // 集中写内存块，用于发送数据
-     
-     Buffer readBuff_; // 读缓冲区
-     Buffer writeBuff_; // 写缓冲区
- 
-     HttpRequest request_;  // 解析客户请求  
-     HttpResponse response_;  // 响应客户请求
+    int iovCnt_;  // 有数据的块的数量
+    struct iovec iov_[2];  // 集中写内存块，用于发送数据
+    
+    Buffer readBuff_; // 读缓冲区
+    Buffer writeBuff_; // 写缓冲区
+
+    HttpRequest request_;  // 解析客户请求  
+    HttpResponse response_;  // 响应客户请求
 
  };
  

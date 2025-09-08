@@ -40,6 +40,11 @@ public:
         数据库名称，连接池的数量，线程池数量
         日志开关，日志等级，日志异步队列容量
     */
+    /* WebServer构造函数，支持SSL/TLS配置
+     * @param useSSL 是否启用SSL/TLS加密通信
+     * @param certPath SSL证书文件路径(.pem格式)，包含服务器公钥和CA签名
+     * @param keyPath SSL私钥文件路径(.pem格式)，用于解密和数字签名
+     */
     WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               int sqlPort, const char* sqlUser, const char* sqlPwd,
               const char* dbName, int connPoolNum, int threadNum,
@@ -66,8 +71,9 @@ private:
     void OnWrite_(HttpConn* client);
     void OnProcess(HttpConn* client);
 
-    void InitSSL_();
-    void CleanupSSL_();
+    /* SSL/TLS相关方法 */
+    void InitSSL_();        // 初始化SSL上下文，加载证书和私钥
+    void CleanupSSL_();     // 清理SSL资源，释放SSL上下文
 
     static const int MAX_FD = 65536;
 
@@ -88,10 +94,11 @@ private:
     std::unique_ptr<Epoller> epoller_;    // epoll表
     std::unordered_map<int, HttpConn> users_;    // key是连接socket，value是逻辑处理单元
     
-    bool useSSL_;    // 是否启用SSL
-    const char* certPath_;
-    const char* keyPath_;
-    SSL_CTX* sslCtx_;
+    /* SSL/TLS相关成员变量 */
+    bool useSSL_;        // 是否启用SSL/TLS加密通信，true表示支持HTTPS
+    const char* certPath_;   // SSL证书文件路径，包含服务器公钥和CA签名信息
+    const char* keyPath_;    // SSL私钥文件路径，用于解密和数字签名
+    SSL_CTX* sslCtx_;       // SSL上下文对象，管理SSL连接配置和证书信息
 };
 
 

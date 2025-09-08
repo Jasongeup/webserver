@@ -19,7 +19,7 @@ WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
               bool useSSL, const char* certPath, const char* keyPath):
               port_(port), openLinger_(OptLinger), timeoutMS_(timeoutMS), isClose_(false),
               timer_(new HeapTimer()), threadpool_(new ThreadPool(threadNum)), epoller_(new Epoller()),
-              useSSL_(useSSL), certPath_(certPath), keyPath_(keyPath), sslCtx_(nullptr)
+              useSSL_(useSSL), certPath_(certPath), keyPath_(keyPath), sslCtx_(nullptr)  // 初始化SSL相关成员变量
 {
     srcDir_ = getcwd(nullptr, 256);
     assert(srcDir_);  // 获取当前工作目录的绝对路径
@@ -28,8 +28,9 @@ WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
     HttpConn::srcDir = srcDir_;
     SqlConnPool::Instance()->Init("localhost", sqlPort, sqlUser, sqlPwd, dbName, connPoolNum); // 初始化数据库连接池
 
+    /* 如果启用SSL，则初始化SSL上下文和证书 */
     if (useSSL_) {
-        InitSSL_();
+        InitSSL_();  // 初始化SSL库，加载证书和私钥文件
     }
     
     InitEventMode_(trigMode);
@@ -48,6 +49,7 @@ WebServer::WebServer(int port, int trigMode, int timeoutMS, bool OptLinger,
             LOG_INFO(MODULE_WEBSERVER, "LogSys level:%d", logLevel);
             LOG_INFO(MODULE_WEBSERVER, "srcDir:%s", HttpConn::srcDir);
             LOG_INFO(MODULE_WEBSERVER, "SqlConnPool num: %d, ThreadPool num: %d", connPoolNum, threadNum);
+            /* 记录SSL配置信息 */
             if (useSSL_) {
                 LOG_INFO(MODULE_WEBSERVER, "SSL enabled, Cert: %s, Key: %s", certPath_, keyPath_);
             }
@@ -60,8 +62,9 @@ WebServer::~WebServer() {
     isClose_ = true;
     free(srcDir_);
     SqlConnPool::Instance()->ClosePool();
+    /* 清理SSL资源 */
     if (useSSL_) {
-        CleanupSSL_();
+        CleanupSSL_();  // 释放SSL上下文和相关资源
     }
 }
 
@@ -142,20 +145,23 @@ void WebServer::CloseConn_(HttpConn* client) {
 }
 
 /* 新连接到来，分配逻辑处理对象，注册读就绪事件 */
+/* 处理新客户端连接，建立SSL/TLS加密通道 */
 void WebServer::AddClient_(int fd, sockaddr_in addr) {
+    /* 检查SSL上下文是否已正确初始化 */
     if (useSSL_ && !sslCtx_) {
         LOG_ERROR(MODULE_WEBSERVER, "SSL context not initialized");
         return;
     }
-    
+
     assert(fd > 0);
 
     SSL* ssl = nullptr;
+    /* 如果启用SSL，为每个新连接创建SSL会话 */
     if (useSSL_) {
-        ssl = SSL_new(sslCtx_);
-        SSL_set_fd(ssl, fd);
-        if (SSL_accept(ssl) <= 0) {
-            SSL_free(ssl);
+        ssl = SSL_new(sslCtx_);        // 创建新的SSL会话对象
+        SSL_set_fd(ssl, fd);           // 将SSL会话绑定到socket文件描述符
+        if (SSL_accept(ssl) <= 0) {    // 执行SSL握手，建立加密通道
+            SSL_free(ssl);             // 握手失败，释放SSL资源
             return;
         }
     }
@@ -319,43 +325,63 @@ int WebServer::SetFdNonblock(int fd) {
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFD, 0) | O_NONBLOCK);
 }
 
-/* 初始化SSL上下文 */
+/* 初始化SSL上下文和证书配置
+ * 此函数负责：
+ * 1. 初始化OpenSSL库
+ * 2. 创建SSL上下文对象
+ * 3. 加载服务器证书和私钥
+ * 4. 验证证书和私钥的匹配性
+ */
 void WebServer::InitSSL_() {
-    SSL_library_init();
-    OpenSSL_add_all_algorithms();
-    SSL_load_error_strings();
-    sslCtx_ = SSL_CTX_new(TLS_server_method());
+    /* 初始化OpenSSL库，加载所有加密算法和错误信息 */
+    SSL_library_init();              // 初始化SSL库
+    OpenSSL_add_all_algorithms();    // 加载所有支持的加密算法
+    SSL_load_error_strings();        // 加载SSL错误信息字符串
+    
+    /* 创建SSL上下文，使用TLS服务器方法 */
+    sslCtx_ = SSL_CTX_new(TLS_server_method());  // 创建支持TLS协议的SSL上下文
     if (!sslCtx_) {
         LOG_ERROR(MODULE_WEBSERVER, "Create SSL context failed");
         isClose_ = true;
         return;
     }
     
+    /* 加载服务器证书文件(.pem格式)
+     * 证书包含服务器的公钥和CA的数字签名，用于客户端验证服务器身份
+     */
     if (SSL_CTX_use_certificate_file(sslCtx_, certPath_, SSL_FILETYPE_PEM) <= 0) {
         LOG_ERROR(MODULE_WEBSERVER, "Load certificate failed");
-        ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);  // 打印详细的SSL错误信息
         isClose_ = true;
         return;
     }
     
+    /* 加载服务器私钥文件(.key格式)
+     * 私钥用于解密客户端发送的加密数据和生成数字签名
+     */
     if (SSL_CTX_use_PrivateKey_file(sslCtx_, keyPath_, SSL_FILETYPE_PEM) <= 0) {
         LOG_ERROR(MODULE_WEBSERVER, "Load private key failed");
-        ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);  // 打印详细的SSL错误信息
         isClose_ = true;
         return;
     }
     
+    /* 验证私钥与证书是否匹配
+     * 确保私钥和证书是配对的，这是SSL安全性的重要保证
+     */
     if (!SSL_CTX_check_private_key(sslCtx_)) {
         LOG_ERROR(MODULE_WEBSERVER, "Private key does not match certificate");
         isClose_ = true;
     }
 }
 
-/* 清理SSL资源 */
+/* 清理SSL资源
+ * 在服务器关闭时释放所有SSL相关的内存和资源
+ */
 void WebServer::CleanupSSL_() {
     if (sslCtx_) {
-        SSL_CTX_free(sslCtx_);
-        sslCtx_ = nullptr;
+        SSL_CTX_free(sslCtx_);    // 释放SSL上下文对象及其关联的所有资源
+        sslCtx_ = nullptr;        // 将指针置空，防止重复释放
     }
-    EVP_cleanup();
+    EVP_cleanup();                // 清理OpenSSL的加密算法表，释放相关内存
 }
